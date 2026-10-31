@@ -122,3 +122,23 @@ Each benchmark run produces a reproducible dataset and a concise summary report 
 
 ### Proposition Summary
 > **A longitudinal benchmark measuring successful autonomous coding work delivered per real-world consumer subscription, starting with Google Antigravity model configurations.**
+
+---
+
+## Development
+
+* Plan: [`docs/implementation_plan.md`](docs/implementation_plan.md). Phase 0 results: [`docs/phase0_findings.md`](docs/phase0_findings.md).
+* Requires [`uv`](https://docs.astral.sh/uv/), Python 3.12, and Docker (suite validation and grading).
+
+```bash
+uv sync                                   # runtime + dev tools
+uv run pytest                             # unit tests
+uv run ruff check . && uv run ruff format --check .
+uv run subbench init-db                   # create data/subbench.sqlite
+uv run subbench validate experiments/baseline.yaml
+
+# Suite curation needs the extra `suite` dependency group (pyarrow, swebench)
+uv run --group suite subbench suite build --revision <sha> --version verified-mvp-v1 \
+    --out suites/verified-mvp-v1.json
+uv run --group suite subbench suite validate suites/verified-mvp-v1.json
+```
