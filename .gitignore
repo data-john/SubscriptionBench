@@ -34,3 +34,9 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Scratch for suite validation / harness runs
+data/cache/
+data/validation/
+logs/
+evaluation_results/
