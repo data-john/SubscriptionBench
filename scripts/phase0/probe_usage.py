@@ -7,6 +7,7 @@ probe can never attach to a parent Antigravity session.
 
 Usage: probe_usage.py [--agy PATH] [--count N] [--interval SECONDS]
 """
+
 from __future__ import annotations
 
 import argparse

@@ -1,0 +1,27 @@
+# Baseline: the three MVP configs. Mapping is PROPOSED (D14) pending operator confirmation.
+name: baseline
+description: Default / efficient / capable Google configs over the full suite.
+suite: suites/verified-mvp-v1.json
+agy_path: /home/john/.local/bin/agy
+passes: 2          # D7 recommendation
+timeout_minutes: 45
+prompt_template: minimal-v1
+configs:
+  - label: default-argon-medium
+    role: default
+    model_id: gemini-4-argon-medium
+    buckets: [gemini-argon-wtu-weekly]
+  - label: efficient-flash-low
+    role: efficient
+    model_id: gemini-3.8-flash-low
+    buckets: [gemini-5h, gemini-weekly]
+  - label: capable-argon-high
+    role: capable
+    model_id: gemini-4-argon-high
+    buckets: [gemini-argon-wtu-weekly]
+quota:
+  common_unit_bucket: gemini-weekly
+  primary_bucket_by_config:
+    default-argon-medium: gemini-argon-wtu-weekly
+    efficient-flash-low: gemini-5h
+    capable-argon-high: gemini-argon-wtu-weekly

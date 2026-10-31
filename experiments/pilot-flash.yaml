@@ -1,0 +1,19 @@
+# Pilot: 3 tasks x 1 config, end-to-end check (Phase 8). Model ids and buckets from
+# docs/phase0_findings.md.
+name: pilot-flash
+description: End-to-end pilot on the efficient config only.
+suite: suites/verified-mvp-v1.json
+agy_path: /home/john/.local/bin/agy
+passes: 1
+timeout_minutes: 45
+prompt_template: minimal-v1
+task_limit: 3
+configs:
+  - label: efficient-flash-low
+    role: efficient
+    model_id: gemini-3.8-flash-low
+    buckets: [gemini-5h, gemini-weekly]
+quota:
+  common_unit_bucket: gemini-weekly
+  primary_bucket_by_config:
+    efficient-flash-low: gemini-5h
