@@ -1,192 +1,179 @@
 # SubscriptionBench: Implementation Plan (MVP: Antigravity + Google AI Pro)
 
 > [!NOTE]
-> **Revision 2 (2026-10-31).** Changes: suite reduced to **9–12 tasks**, `agy` is now installed, and about 30–50 GB more disk is being freed. Claims about CLI flags, JSON fields and quota behaviour are still **hypotheses until Phase 0 confirms them**.
+> **Revision 3 (2026-11-01).** Incorporates Phase 0 empirical findings, freezes Phases 1–2 (`verified-mvp-v1`, 12 tasks), resolves **D13** (Option (a) in-container `agy` with a persistent OAuth/keyring Docker volume; Option (c) hybrid documented as fallback) and **D14** (`efficient` = `gemini-3.8-flash-medium`), and scopes the Phase 3 work batch (see [`docs/handover_phase3.md`](handover_phase3.md)).
 
 ---
 
-## 1. What I found that changes the design
+## 1. Key findings shaping the design
 
 | # | Finding | Why it matters | Status |
 |---|---|---|---|
-| F1 | The **Python SDK** appears to authenticate with a Gemini API key or Vertex credentials, which means API billing, not the subscription. | Only the **`agy` CLI in headless mode** (`agy -p … --model … --output-format stream-json --dangerously-skip-permissions`), using your cached Google login, draws down the AI Pro allowance. | Decided: CLI only |
-| F2 | Quota is reportedly exposed as **`remaining_fraction` per bucket**, with a **5-hour** window and a **weekly** cap (`agy -p /usage --output-format json`). | Automated quota reading looks possible. The **precision** of the number decides whether per-task cost can be measured. | Verify in Phase 0 |
-| F3 | There is an **AI Credits overage** setting (`useAiCredits` / `useG1Credits`). | It must be off, or runs silently switch to paid credits when the allowance runs out. | Verify in Phase 0 |
-| F4 | Gemini models probably **share one quota pool**. | Configs run one after another. **Any other use of the account** (including Antigravity app or IDE sessions) contaminates the measurement. | Mitigated (contamination guard) |
-| F5 | SWE-bench images may contain the repo's **future git history**. Web access would let the agent find the upstream fix. | Strip history, use an egress allowlist, audit transcripts. | Decided |
-| F6 | `/var` had about 51 GB free. You're freeing **30–50 GB more**, so about 80–100 GB will be available. | A 9–12-task suite needs roughly **15–35 GB** of images. | **Resolved** |
-| F7 | `agy` is installed, but it may not be on PATH in every shell environment (e.g. sandboxed agent shells; only `~/.config/Antigravity/bin/agy-node` was found there). | The runner needs an absolute `agy` path configured in the manifest. Phase 0 will confirm the path. | Phase 0 |
+| F1 | The **Python SDK** and `GEMINI_API_KEY` / ADC use API or GCP billing, not the consumer subscription. | Only the **`agy` CLI in headless mode** (`agy -p … --model … --output-format stream-json`), using a consumer Google OAuth login, draws down the AI Pro allowance. | Confirmed (Phase 0) |
+| F2 | `agy -p /usage --output-format json` returns **double-precision floats** per bucket and **consumes zero quota**. | Per-task quota deltas are directly measurable (a trivial Flash call moved `gemini-5h` by 0.017 pp; a trivial Argon call moved `gemini-argon-wtu-weekly` by 0.127 pp). | Confirmed (Phase 0) |
+| F3 | **Argon and Flash draw from disjoint quota pools.** Argon (`default`, `capable`) draws **only** from `gemini-argon-wtu-weekly` (no 5h window). Flash (`efficient`) draws from `gemini-5h` and `gemini-weekly`. | There is **no single shared bucket ID** across configs. Allowance must be tracked per bucket; cross-config comparison normalizes by each config's respective weekly pool (`gemini-weekly` for Flash, `gemini-argon-wtu-weekly` for Argon), clearly labelled as two separate weekly Pro pools. | Confirmed; `config.py` fix queued |
+| F4 | AI Credits overage is controlled by `--settings '{"useG1Credits": false}'`. | Accepted per-session in headless mode; exact behaviour at 0% quota is unverified without draining the account, so the probe must also inspect raw `/usage` JSON for credit fields as a hard stop. | Partial (Phase 0) |
+| F5 | `agy` returns **process exit code `0` even on auth/runtime errors** (`result.status = "ERROR"`). | The adapter must parse the final `result` NDJSON event and never rely on exit code alone. | Confirmed (Phase 0) |
+| F6 | Headless `agy` exposes **web and browser tools** (`search_web`, `read_url_content`, `open_browser_url`), and `search_web` executes **server-side** over Google's API channel. | An egress proxy blocks shell/browser access to `github.com`, **not** server-side `search_web`. Phase 3 must also block web/browser tools via `--settings` `permissions.deny` (and pass `--disable-slash-commands`), backed by the transcript leak audit. | Confirmed; mitigate in Phase 3 |
+| F7 | Linux `agy` stores OAuth tokens in the **D-Bus Secret Service keyring** (`libsecret`), not in `~/.gemini` files. | In-container execution (D13a) requires a named Docker volume paired with `dbus-run-session` + an unlocked `gnome-keyring-daemon` inside the container, initialized once via `agy`'s official OAuth flow. | Spike at start of Phase 3 |
+| F8 | Disk & grader: `swebench==4.1.0` is pinned (5.x requires an `image` column absent from the pinned dataset). The 12 pulled instance images take ~13 GB shared on `/`, leaving **~37 GB free**. | Keep overlay layers thin (no `/testbed` copy at image-build time) and pass `--cache_level instance` to `swebench` so grading never deletes pre-pulled instance images. | Confirmed (Phase 2) |
 
 ---
 
-## 2. What a 9–12-task suite means for the design
+## 2. What a 12-task suite means for the design
 
-A small suite is a good choice for the MVP: it's cheap in quota and disk, and fast to iterate on. It does change what the results can claim:
+Suite `verified-mvp-v1` freezes 12 validated tasks (4 `<15 min fix`, 4 `15 min - 1 hour`, 4 `1-4 hours` across 6 repos in stratified round-robin order):
 
-- **Statistical power is low.** With n=12, a resolve rate of 6/12 has a Wilson 95% CI of about **25–75%**, so typical gaps between configs **won't be statistically distinguishable**. The MVP should be presented as **validating the protocol and pipeline**, with directional results, not a definitive ranking.
-- **Compare configs task by task.** All configs run the same tasks, so the report shows a **task × config outcome matrix** (resolved / failed / not attempted) and paired differences (McNemar-style counts), not just aggregate rates.
-- **Repeats are now affordable.** 12 tasks × 3 configs = 36 attempts per pass. Running **k=2–3 passes** would separate model differences from run-to-run noise (agent runs are non-deterministic). See open decision D7.
-- **The 2-window cap is unlikely to bind** for the efficient and default models at this size. It still protects against the capable model running long. The stratified task order is kept so a truncated run is still balanced.
-- **"Tasks resolved before throttling" may never be reached.** In that case, report the measured ratio **resolved per unit of window fraction consumed** (e.g. "≈ N resolved per full 5h window"), clearly labelled as a projection from measured consumption. This is a ratio of observed quota, not an estimate from API token prices, so it stays within the README's rule.
-- **Quota precision matters even more.** With only 12 attempts per config, batch-level measurement (if precision is coarse) gives just 2–3 data points. If `remaining_fraction` turns out coarse, k=2–3 repeats are the main way to get a usable cost signal.
+- **Statistical power is directional, not definitive.** With `n=12`, a resolve rate of 6/12 has a Wilson 95% CI of roughly **25–75%**. Present the MVP as validating the protocol and pipeline, using a **task × config outcome matrix** and paired counts alongside aggregate rates.
+- **Repeats (`k=2`) separate model signal from run-to-run noise.** Because `/usage` has full float precision, repeats are no longer needed for quota resolution, only for agent variance—and remain subject to Argon weekly capacity (D15, checked during calibration).
+- **Bucket-specific caps replace a universal 2 × 5h cap.** Flash can wait for a `gemini-5h` reset (capped at 2 × 5h windows per cycle). Argon has only a 7-day bucket (`gemini-argon-wtu-weekly`), so waiting for resets across weeks is impractical; if Argon exhausts its weekly pool (or exceeds a configured per-cycle fraction cap), the runner halts that config cleanly and records truncated coverage over the balanced round-robin order.
+- **Projected throughput per pool.** When a config finishes without exhausting its pool, report observed **resolved tasks per 100% of its primary/weekly allowance pool** (a ratio of measured subscription consumption, never estimated from API token prices).
 
 ---
 
-## 3. Proposed architecture
+## 3. Architecture
 
 ```mermaid
 flowchart LR
     M["Experiment manifest (YAML)"] --> R["Runner (sequential state machine)"]
     S["Pinned task suite (JSON)"] --> R
-    R --> P["Provisioner (Docker task container + agy overlay)"]
-    P --> X["Egress allowlist proxy"]
-    R --> Q["Quota probe (agy /usage JSON)"]
-    R --> A["Agent adapter (agy headless, in container)"]
-    A --> C["Capture: patch, NDJSON transcript, logs"]
+    R --> P["Provisioner (SWE-bench container + thin agy/keyring overlay)"]
+    P --> X["Egress allowlist proxy (internal net)"]
+    R --> Q["Quota probe (agy /usage raw JSON)"]
+    R --> A["Agent adapter (agy headless in container, D13a)"]
+    A --> C["Capture: patch vs initial_sha, NDJSON, proxy log"]
     C --> DB[("SQLite + artifacts dir")]
     Q --> DB
-    DB --> G["Grader (swebench harness, offline batch)"]
+    DB --> G["Grader (swebench 4.1.0, --cache_level instance)"]
     G --> DB
-    DB --> AU["Leak audit (transcript URL scan)"]
+    DB --> AU["Leak audit (transcript + proxy log scan)"]
     DB --> RP["Reporter (Markdown, CSV/Parquet, charts)"]
 ```
 
-**Key principle:** keep **agent execution** (uses quota, strictly one task at a time) separate from **grading** (no quota, can run in parallel and be re-run at any time).
+**Core principle:** keep **agent execution** (consumes subscription quota, strictly sequential) separate from **grading** (consumes zero quota, offline and repeatable).
 
 ### Repository layout
 
-```
+```text
 SubscriptionBench/
-├── pyproject.toml              # uv-managed, Python 3.12
+├── pyproject.toml              # uv-managed, Python 3.12 (dev + suite groups)
 ├── subbench/
-│   ├── cli.py                  # Typer CLI: suite / run / grade / audit / report / quota
-│   ├── config.py               # Pydantic models for manifests
-│   ├── store/                  # SQLite schema + migrations, Parquet/CSV export
-│   ├── tasks/                  # SWE-bench loader, suite curation, validation
-│   ├── provision/              # Docker task-container builder (agy overlay, history strip)
+│   ├── cli.py                  # Typer CLI: init-db / validate / suite / (next: calibrate, run, grade, audit, report)
+│   ├── config.py               # Strict Pydantic v2 models for experiment & suite manifests
+│   ├── store/                  # SQLite schema + migrations (9 tables, WAL, FK)
+│   ├── tasks/                  # Pinned HF parquet loader, seeded curation, harness validation
+│   ├── provision/              # [Phase 3] Overlay builder, .git history strip, egress proxy, patch capture
 │   ├── agents/
-│   │   ├── base.py             # AgentAdapter protocol (future: claude_code.py, codex.py)
-│   │   └── antigravity.py      # agy headless driver + stream-json parser
-│   ├── quota/
-│   │   ├── base.py             # QuotaProbe protocol
-│   │   ├── agy_usage.py        # automated probe
-│   │   └── manual.py           # fallback: operator checkpoints, provenance=manual
-│   ├── runner.py               # resumable sequential state machine
-│   ├── grading.py              # wraps swebench.harness.run_evaluation
-│   ├── audit.py                # leak detection over transcripts
-│   └── report/                 # metrics, CIs, outcome matrix, longitudinal deltas
-├── suites/                     # pinned suite manifests (committed)
-├── experiments/                # experiment manifests (committed)
-├── docker/                     # agy overlay Dockerfile, egress proxy config
-├── docs/                       # phase0_findings.md, protocol.md
-├── tests/                      # unit tests (parsers, state machine, metrics)
-└── artifacts/ data/ logs/      # git-ignored
+│   │   ├── base.py             # [Phase 3] AgentAdapter protocol (future: claude_code.py, codex.py)
+│   │   ├── prompts.py          # [Phase 3] Versioned, hashed prompt templates (minimal-v1)
+│   │   └── antigravity.py      # [Phase 3] agy headless driver + stream-json parser
+│   ├── quota/                  # [Phase 4] QuotaProbe protocol, agy_usage.py, manual.py
+│   ├── runner.py               # [Phase 5] Resumable sequential state machine
+│   ├── grading.py              # [Phase 6] swebench.harness.run_evaluation (--cache_level instance)
+│   ├── audit.py                # [Phase 6] Transcript + proxy log leak scanner
+│   └── report/                 # [Phase 7] Per-bucket metrics, CIs, outcome matrix, longitudinal deltas
+├── suites/                     # Frozen suite manifests & validation/image records (committed)
+├── experiments/                # Experiment manifests: pilot-flash.yaml, baseline.yaml (committed)
+├── docker/                     # [Phase 3] Thin agy/keyring overlay Dockerfile & egress proxy
+├── scripts/                    # Phase 0 spikes, pull_images.py, container auth bootstrap
+├── docs/                       # Plan, Phase 0 findings, suite docs, worker handover
+├── tests/                      # Unit & gated Docker integration tests
+└── artifacts/ data/ logs/      # Git-ignored runtime state
 ```
 
 ---
 
-## 4. Phased plan
+## 4. Phased plan & current status
 
-### Phase 0: Feasibility spike (go/no-go, about 1 day)
-Results are recorded in `docs/phase0_findings.md`.
+### Phase 0: Feasibility spike — **Mostly complete** (carry-overs in Phase 3 batch)
+Recorded in [`docs/phase0_findings.md`](phase0_findings.md).
+- [x] **1–3. Binary, models, `/usage` precision & zero cost:** `/home/john/.local/bin/agy` v1.4.12; 13 models; disjoint Argon (`gemini-argon-wtu-weekly`) vs Flash (`gemini-5h`, `gemini-weekly`) pools; double-precision floats; rolling reset from first spend.
+- [x] **4. `stream-json` schema:** `init`, `step_update`, `result` events and token counters verified; `exit_code == 0` on error quirk identified. *(Exact quota-exhaustion error string remains unverified without draining the account; handle defensively.)*
+- [x] **5–7. `useG1Credits: false`, config isolation, auto-update check:** Verified on host. *(Carry-over: inspect full raw `/usage` JSON for credit-balance fields; test blocking updater host at egress proxy.)*
+- [ ] **8. In-container execution & auth persistence (D13a):** `agy --version` runs in Bookworm/Jammy (`glibc 2.35`). **Next:** build thin keyring overlay + named `subbench-agy-auth` volume, complete one-time official `agy` OAuth login, and verify silent auth across two fresh `docker run --rm` runs.
+- [ ] **9. Egress host capture & tool-deny check:** Capture exact TLS SNI / DNS hosts during a container run for the allowlist, and verify `--settings` `permissions.deny` blocks server-side `search_web`, `read_url_content`, and browser tools.
+- [ ] **10. SWE-bench calibration:** Run 2–3 tasks from `verified-mvp-v1` through the Phase 3 provisioner + adapter (Flash Medium + at least 1 Argon run to size `gemini-argon-wtu-weekly` for D15).
+- [ ] **11. Terms of service:** Operator review of primary Antigravity terms prior to Phase 8 baseline.
 
-1. ~~Install `agy`~~ (done). Find the absolute binary path and record `agy --version`. Confirm headless `-p` reuses the cached login.
-2. `agy models`: exact model identifiers, and which one is the **default**. Map them to the three configs (default / efficient / capable).
-3. `agy -p /usage --output-format json`: schema, **precision of `remaining_fraction`**, bucket names, `reset_time` semantics (rolling or fixed), and whether Flash and Pro share a bucket. Also check: **does the `/usage` call itself use quota?**
-4. `stream-json` event schema: tool calls, final message, token usage fields (if any), and the **error event or exit code for "quota exhausted"**.
-5. Turn AI Credits off and confirm the setting takes effect in headless mode.
-6. **Config isolation:** run `agy` with a clean HOME or config dir so your global rules, skills, plugins and MCP servers don't leak into runs.
-7. **Auto-update:** can it be pinned or disabled during a run?
-8. **In-container execution (go/no-go for D2):** does `agy` run inside an SWE-bench instance image? Check glibc, agy's own sandbox nested inside Docker, the credential mount, and whether token refresh needs write access.
-9. **Egress capture:** record which hosts agy contacts (DNS or proxy log), to build the allowlist.
-10. **Calibration:** run 2–3 easy tasks on the efficient model. Check probe resolution, cost per task, and wall-clock time.
-11. Check the terms of service for automated headless use of the subscription.
+### Phase 1: Scaffolding — **Done** (targeted fixes queued in Phase 3 batch)
+- [x] `uv` project, `ruff`, `pytest`, Typer CLI skeleton (`init-db`, `validate`, `suite`), 9-table SQLite schema (`subbench/store/schema.py`), strict Pydantic manifests (`subbench/config.py`), `baseline.yaml` and `pilot-flash.yaml`.
+- [ ] **Queued fixes:** Replace `QuotaPolicy.common_unit_bucket` with per-config `weekly_bucket_by_config`, enforce `KNOWN_BUCKETS` and config-bucket membership validation, add bucket-aware exhaustion policy (`max_5h_windows_per_config_cycle` vs Argon weekly abort/cap), and record `execution_mode` in `environment`.
 
-### Phase 1: Scaffolding (about 0.5–1 day)
-- `uv` project, ruff, pytest. Pydantic manifest schema, Typer CLI skeleton, SQLite schema.
-- **Tables:** `experiments`, `configs`, `cycles`, `attempts`, `quota_snapshots`, `agent_events`, `grades`, `audit_findings`, `environment` (agy version and path, model id, OS, Docker, swebench version, dataset revision, prompt hash).
+### Phase 2: Task suite curation — **Done** (minor polish queued in Phase 3 batch)
+- [x] Frozen `suites/verified-mvp-v1.json` (12 tasks, seed `20261031`, HF SHA `c104f840cc67f8b6eec6f759ebc8b2693d585d4a`), 12/12 gold pass & no-op fail over 2 runs (`suites/verified-mvp-v1.validation.json`), 12 images pre-pulled (`suites/verified-mvp-v1.images.json`).
+- [ ] **Queued polish:** Pass `--cache_level instance` in `subbench/tasks/validate.py` and wire `sha256()` verification into `subbench/tasks/dataset.py`.
 
-### Phase 2: Task suite curation (about 0.5–1 day)
-- Source: **SWE-bench Verified**, with the HF dataset revision pinned.
-- **Target composition (12 tasks):** 4 × `<15 min fix`, 4 × `15 min–1 hour`, 4 × `1–4 hours`. Skip `>4 hours` (only a handful exist, and they're likely to fail for every config, which tells us nothing). For a 9-task suite, use 3/3/3.
-- **Repo diversity vs disk:** spread the tasks across **4–6 repos** (e.g. django, sympy, sphinx, pytest, astropy, requests), so environment images are shared and disk use stays bounded. Avoid repos with very heavy or compile-intensive environments.
-- Selection by fixed seed, then **validation**: gold patch → PASS, empty patch → FAIL, stable over 2 grading runs. Replace any failing candidate with the next one from the same stratum.
-- Freeze as `suites/verified-mvp-v1.json`, with an immutable **stratified round-robin order**. A later, larger suite becomes `v2`. Longitudinal comparisons only compare runs on the same suite version.
-- Pre-build all images and record the actual disk footprint.
-
-### Phase 3: Provisioning and agent adapter (about 2 days)
-- **Workspace:** the SWE-bench instance image plus an **agy overlay layer**. The repo at `base_commit` is copied into a **fresh single-commit git repo** (no history, no remote).
-- **Network:** an internal Docker network whose only exit is an **egress allowlist proxy** (hosts from Phase 0 item 9).
-- **Prompt template** (versioned, hash stored per attempt): the issue text, the repo path, and "resolve autonomously, do not ask questions". No hints about tests.
-- **Driver:** `agy --model <id> --dangerously-skip-permissions --output-format stream-json -p <prompt>`, with a **45-min** wall-clock timeout and the process group killed on timeout.
-- **Capture:** NDJSON transcript, stdout and stderr, exit code, and the patch from `git add -A && git diff --cached <base>` (binary files excluded).
-- An `AgentAdapter` protocol so Claude Code and Codex can be added later.
+### Phase 3: Provisioning and agent adapter — **Next up** (about 2 days)
+Detailed worker instructions in [`docs/handover_phase3.md`](handover_phase3.md).
+- **Container & auth (D13a primary):** Thin overlay on each SWE-bench instance image adding `dbus-x11` + `gnome-keyring` + `libsecret-1-0` (without copying `/testbed` in `docker build`, preserving the 37 GB disk headroom) and mounting `/home/john/.local/bin/agy` read-only plus named volume `subbench-agy-auth` (unlocked keyring + `.gemini` state). See §5.3 for documented fallback **D13(c)**.
+- **Workspace history stripping:** At container start, verify `/testbed` is at `base_commit`, delete `.git`, re-init a fresh single-commit git repo (`<initial_sha>`), and verify editable imports in `/opt/miniconda3/envs/testbed` still work (including `setuptools_scm` repos like `pytest` and `astropy`).
+- **Network isolation:** Attach task container only to `--internal` Docker network `subbench-internal`, routing `HTTP_PROXY`/`HTTPS_PROXY` through a lightweight SNI/CONNECT allowlist proxy container that logs every allowed/denied host per attempt (`proxy.log`).
+- **Prompt template (`minimal-v1`):** Versioned and SHA-256 hashed; supplies issue problem statement, `/testbed` path, and autonomous non-interactive instructions without test hints.
+- **Driver (`AntigravityAdapter`):** Runs `agy -p <prompt> --model <id> --output-format stream-json --disable-slash-commands --settings '{"useG1Credits": false, ...}'` with `/opt/miniconda3/envs/testbed/bin` prepended to `PATH`, streaming NDJSON to disk and killing the container/process group on the 45-min wall-clock timeout. Parses `result.status` (never trusting `exit_code == 0` alone) and records pre/post `agy --version`.
+- **Patch capture:** Stages working tree and diffs against `<initial_sha>` (`git add -A && git diff --cached --no-binary <initial_sha>`) so changes survive even if the agent runs `git commit`.
 
 ### Phase 4: Quota probe (about 0.5 day)
-- `QuotaProbe.snapshot() -> {bucket, window, remaining_fraction, reset_time, raw_json, provenance}`.
-- Snapshots before and after every attempt. A window reset during an attempt is marked `invalid_reset`.
-- **Contamination guard:** a quota drop between `post(i)` and `pre(i+1)` is recorded as `external_use`, and the attempt or cycle is flagged. There is also a 2-minute idle check before starting.
-- Manual fallback with `provenance=manual`.
+- `QuotaProbe.snapshot()` parses all buckets from `agy -p /usage --output-format json` and stores the **complete unstripped stdout JSON** in `quota_snapshots.raw_json` (checking for any credit-spend fields).
+- Pre/post snapshots around every attempt; `reset_time` shifts mid-attempt mark `invalid_reset`; unexplained drops between `post(i)` and `pre(i+1)` mark `external_use`; 2-minute pre-run idle check; manual fallback (`provenance='manual'`).
 
 ### Phase 5: Runner (about 1–1.5 days)
 - States: `PENDING → PROVISIONED → QUOTA_PRE → RUNNING → HALTED(reason) → CAPTURED → QUOTA_POST → GRADED`.
 - Halt reasons: `completed | timeout | agent_error | infra_error | quota_restricted`.
-- Resumable through SQLite, strictly sequential.
-- **Quota exhaustion:** the attempt is discarded (its cost still counts). The runner waits for `reset_time` and re-runs that task from scratch. **Hard cap: 2 × 5h windows per config per cycle.**
-- **Pass structure (if k>1):** pass 1 runs all configs, then pass 2 runs all configs, and so on, not all passes of one config back to back. That way a time-of-day or server-side drift affects every config equally.
-- Pre-flight: AI Credits off, model available, agy version recorded, disk free, no external use detected.
+- Strictly sequential, SQLite-resumable, pass-interleaved (`pass 1` across all configs, then `pass 2`).
+- **Bucket-aware exhaustion:** On `gemini-5h` exhaustion, discard the interrupted attempt (keeping its cost), wait until `reset_time`, and retry (max 2 × 5h windows per config per cycle). On `gemini-argon-wtu-weekly` (or `gemini-weekly`) exhaustion, discard the interrupted attempt and halt that config for the cycle (`on_weekly_exhaustion = "abort_config"`).
 
 ### Phase 6: Grading and audit (about 1 day)
-- `predictions.jsonl` → `swebench.harness.run_evaluation --instance_ids …`, with parallel workers.
-- Results stored in `grades` (resolved, FAIL_TO_PASS / PASS_TO_PASS, apply failures).
-- **Leak audit:** scan transcripts for upstream repo, PR, issue or commit URLs and `git log --all`-style probing. A hit puts the attempt in `audit_findings` and flags it in the report. It isn't deleted.
+- Offline batch evaluation via `swebench.harness.run_evaluation --cache_level instance`, recording `resolved`, `patch_applied`, `FAIL_TO_PASS`, and `PASS_TO_PASS` in `grades`.
+- Leak audit (`audit.py`) scans both `transcript.ndjson` (including `search_web` / URL tool events) and `proxy.log` for upstream repo/PR/issue/commit lookups or git-history probing, recording hits in `audit_findings`.
 
 ### Phase 7: Metrics and reporting (about 1 day)
-- **Allowance unit:** a fraction of the 5h window (headline: "resolved per full 5h window"), plus a fraction of the weekly cap.
-- **Efficiency** = resolved / Σ valid allowance consumed (aborted attempts included).
-- Always side by side: resolve rate with a Wilson CI, coverage, median and max wall-clock, efficiency (bootstrap CI if k>1), failure taxonomy, quota interruptions, external-use and audit flags, quota per successful task.
-- **Task × config outcome matrix** and paired differences.
-- An explicit "measurement limitations" section (probe precision, n=12, contamination flags).
-- Outputs: `reports/<cycle>/summary.md`, CSV and Parquet, a few charts.
+- **Allowance units:** Per-config primary bucket (`gemini-5h` for Flash; `gemini-argon-wtu-weekly` for Argon) **plus** per-config weekly pool (`gemini-weekly` for Flash; `gemini-argon-wtu-weekly` for Argon), with explicit disclosure that Flash and Argon weekly pools are separate Pro allowances.
+- Side-by-side reporting: resolve rate (Wilson 95% CI), coverage, median/max wall-clock, efficiency, failure taxonomy, quota interruptions, external-use and leak-audit flags, **task × config outcome matrix**, and longitudinal deltas.
 
 ### Phase 8: Pilot, then baseline
-- Pilot: 3 tasks × 1 config (end-to-end check).
-- Baseline: 12 tasks × 3 configs × k passes.
-- **Rough quota footprint:** at about 36 attempts per pass, a single pass probably fits within 1–3 Gemini windows in total. Phase 0 calibration will refine this.
+- Pilot (`experiments/pilot-flash.yaml`): first 3 round-robin tasks × `efficient-flash-medium`.
+- Baseline (`experiments/baseline.yaml`): 12 tasks × 3 configs × `k` passes (`k` finalized after Phase 3 calibration / D15).
 
 ### Phase 9: Longitudinal automation
-- A systemd user timer for the bi-weekly cycle, with notifications. The runner checks for external use before starting and defers if it finds any.
-- Drift guard: changes in agy version or model list are recorded and labelled in the report.
-
-**Rough total effort to the first baseline:** about 7–9 working days (previously about 10–12).
+- Bi-weekly systemd user timer with pre-run idle/external-use check and `agy`/model drift labelling.
 
 ---
 
 ## 5. Decisions
 
-### Resolved
+### 5.1 Resolved
 
 | ID | Decision |
 |---|---|
-| D1 | `agy` CLI in headless mode. No SDK. |
-| D2 | Agent runs inside the SWE-bench task container (subject to the Phase 0 go/no-go). |
-| D3 | Full suite per config. Per-attempt deltas are summed. Hard cap of 2 × 5h windows per config per cycle. Stratified round-robin order. |
-| D4 | Egress allowlist proxy plus transcript leak audit. |
-| D5 | **Suite of 9–12 tasks** (default 12: 4/4/4 by difficulty, across 4–6 repos). |
-| D6 | Only the 3 Google baselines. |
-| D8 | Personal account, with the contamination guard. |
-| F6 | Disk: about 80–100 GB available once the space is freed. Enough. |
+| D1 | `agy` CLI in headless mode only (no SDK / API keys). |
+| D2 / D13 | **Option (a) selected:** Run `agy` inside the SWE-bench task container using a one-time official `agy` OAuth login stored in a named Docker volume (`subbench-agy-auth`, with Linux keyring daemon support). **Option (c)** documented below as fallback if container keyring persistence fails. Pure host worktree **(b)** rejected because the host lacks the historical `testbed` Python/C environments. |
+| D3 | Full suite per config in immutable stratified round-robin order (`verified-mvp-v1`). Per-attempt deltas summed; 2 × 5h window cap for 5h buckets; abort-config policy on weekly bucket exhaustion. |
+| D4 | Internal Docker network + egress allowlist proxy + `--settings` `permissions.deny` on web/browser tools + post-run transcript/proxy leak audit. |
+| D5 / D5a | **12 tasks** frozen in `suites/verified-mvp-v1.json` (4 easy / 4 medium / 4 hard across 6 repos). |
+| D6 | Only the 3 Google Pro baselines (`default`, `efficient`, `capable`). |
+| D8 | Personal Google AI Pro account with idle check and inter-attempt contamination guard. |
+| D9 | Interrupted attempts are **discarded and re-run** when eligible (quota cost still counted). |
+| D10 | SQLite as source of truth; CSV and Parquet exports. |
+| D11 | Per-task wall-clock timeout: **45 minutes**. |
+| D12 | Minimal, versioned, SHA-256-hashed prompt template (`minimal-v1`). |
+| D14 | **Config → model mapping:** `default` = `gemini-4-argon-medium`, `efficient` = `gemini-3.8-flash-medium`, `capable` = `gemini-4-argon-high`. |
 
-### Still open (my defaults apply unless you say otherwise)
+### 5.2 Open (resolved after Phase 3 calibration / pre-baseline)
 
-| ID | Decision | Options | Recommendation |
+| ID | Decision | Options | Current default / plan |
 |---|---|---|---|
-| D5a | **Exact suite size** | 9 (3/3/3) or 12 (4/4/4) | **12**: one more task per difficulty level, at small extra cost. |
-| D7 | **Repeats** | k=1 / 2 / 3 | **k=2** for the baseline. With n=12 a single pass is very noisy, and a second pass doubles the data for about 36 more attempts. |
-| D9 | Interrupted attempts | Discard and re-run, or resume | **Discard and re-run** (cost counted). |
-| D10 | Storage | — | SQLite as the source of truth, CSV and Parquet exports. |
-| D11 | Per-task timeout | 30 / 45 / 60 min | **45 min**. |
-| D12 | Prompt template | Minimal, or SWE-agent style | **Minimal**, versioned and hashed. |
+| D7 | **Repeats (`k`)** | `k = 1 / 2 / 3` | **`k = 2`** in `baseline.yaml`, subject to D15 calibration. |
+| D15 | **Argon weekly pool sizing** | Keep `capable-argon-high` at `k=2`, drop to `k=1`, or cap weekly fraction | Measure per-task `gemini-argon-wtu-weekly` cost in Phase 3 calibration before running Phase 8 baseline. |
+| ToS | **Terms review (Phase 0 #11)** | Operator review of primary Antigravity terms | Operator checks before Phase 8 full baseline. |
+
+### 5.3 Documented fallback for D13: Option (c) — Hybrid host `agy` + air-gapped `testbed` container
+
+If Option (a) hits a blocker where `agy` OAuth tokens inside a headless Linux container (`dbus-run-session` + `gnome-keyring-daemon` on `subbench-agy-auth`) fail to persist or refresh across ephemeral `docker run --rm` invocations, **do not fall back to a bare host checkout (Option b)** (which lacks Python 3.6–3.9 and compiled Cython deps in `/opt/miniconda3/envs/testbed`). Instead, fall back to **Option (c)**:
+
+1. **Workspace extraction & air-gapped runtime container:** Extract `/testbed` at `base_commit` from the SWE-bench instance image into a fresh host scratch dir (`/tmp/subbench-attempt-<id>/testbed`), strip `.git` to a single initial commit, and bind-mount it back at `/testbed` inside a running SWE-bench task container started with **`--network none`** (`--workdir /testbed`).
+2. **Host `agy` invocation with sandbox & path guards:** Run `agy` on the host (reusing the native desktop keyring login) with `cwd=/tmp/subbench-attempt-<id>/testbed`, `--sandbox`, `--disable-slash-commands`, and `--settings` denying `search_web` / `read_url` / browser tools as well as host paths outside the attempt directory (specifically protecting the `SubscriptionBench/` repo and `data/cache/`).
+3. **Transparent `testbed` execution bridge:** Provide a thin wrapper script in the attempt harness (e.g. `subbench-exec` invoking `docker exec -i <container_name> /opt/miniconda3/envs/testbed/bin/bash -lc ...`, excluding any other Docker subcommands via `permissions.allow`/`deny`) and include a single-line environment note in the hybrid prompt adapter (`minimal-hybrid-v1`, recorded with `execution_mode='hybrid_host'` in `environment`) instructing the agent to run Python/test commands through that container runner.
+4. **Deviation logging:** Record `execution_mode = "hybrid_host"` in SQLite and document the prompt/execution difference explicitly in reports; never mix `container` and `hybrid_host` cycles in longitudinal comparisons without flagging the mode change.
 
 ---
 
@@ -194,11 +181,11 @@ Results are recorded in `docs/phase0_findings.md`.
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Small n (9–12) | Config differences not statistically significant | Present as protocol validation; paired outcome matrix; k=2 repeats |
-| Quota precision too coarse | No per-task cost | Repeats and per-pass totals; report the resolution explicitly |
-| Rolling-window refresh during a run | Understated cost | Detect `reset_time` changes; mark `invalid_reset` |
-| Use of the personal account during runs | Overstated cost | External-use guard; pre-run idle check |
-| agy won't run inside the task container | D2 fallback needed | Host worktree mode, documented as a deviation |
-| SWE-bench Verified in training data | Inflated resolve rates | Affects every config equally; stated in the report |
-| `agy` CLI or JSON changes | Parser breaks | Version-pinned parser tests; raw NDJSON kept permanently |
-| Server-side routing or quota policy changes | Breaks longitudinal comparability | Record versions and model IDs; label drift |
+| Small `n = 12` | Config gaps have wide CIs | Present as protocol validation; report paired task × config matrix; `k=2` passes |
+| Disjoint Argon vs Flash weekly pools | Unknown relative pool sizes | Report primary-bucket and weekly-pool fractions side by side; disclose separate pools |
+| Argon weekly pool smaller than 1–2 passes | `capable` / `default` truncates early | Calibrate Argon burn in Phase 3 (D15); stratified round-robin order keeps prefixes balanced |
+| Headless Docker keyring fails token persistence/refresh | Blocks D13(a) | Test across 2 fresh container runs first; documented fallback to D13(c) hybrid mode |
+| Server-side `search_web` leaks GitHub fixes over allowed Google API | Contaminates SWE-bench validity | Block web/browser tools via `--settings` `permissions.deny` + mandatory transcript leak audit |
+| Disk headroom (`~37 GB` free on `/`) | Image bloat fills root partition | Thin overlay layers (never duplicate `/testbed` in `docker build`); `--cache_level instance` |
+| Rolling-window reset or personal account use during run | Distorts measured quota delta | Track `reset_time` (`invalid_reset`); pre-run idle check + inter-attempt `external_use` guard |
+| `agy` auto-updates or JSON schema changes mid-cycle | Drift or parser failure | Test blocking updater host at proxy; log pre/post `agy --version`; keep raw NDJSON forever |

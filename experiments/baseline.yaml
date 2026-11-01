@@ -1,4 +1,4 @@
-# Baseline: the three MVP configs. Mapping is PROPOSED (D14) pending operator confirmation.
+# Baseline: the three MVP configs (D14 confirmed).
 name: baseline
 description: Default / efficient / capable Google configs over the full suite.
 suite: suites/verified-mvp-v1.json
@@ -11,9 +11,9 @@ configs:
     role: default
     model_id: gemini-4-argon-medium
     buckets: [gemini-argon-wtu-weekly]
-  - label: efficient-flash-low
+  - label: efficient-flash-medium
     role: efficient
-    model_id: gemini-3.8-flash-low
+    model_id: gemini-3.8-flash-medium
     buckets: [gemini-5h, gemini-weekly]
   - label: capable-argon-high
     role: capable
@@ -23,5 +23,5 @@ quota:
   common_unit_bucket: gemini-weekly
   primary_bucket_by_config:
     default-argon-medium: gemini-argon-wtu-weekly
-    efficient-flash-low: gemini-5h
+    efficient-flash-medium: gemini-5h
     capable-argon-high: gemini-argon-wtu-weekly

@@ -31,12 +31,12 @@ Run date: 2026-10-31. Host: Linux Mint 22.3. Spike scripts: [`scripts/phase0/`](
 
 Also listed (out of scope, D6): `claude-opus-5-5-*`, `claude-sonnet-5-5-*`, `gpt-oss-120b-medium`. They draw from a separate `3p-*` pool.
 
-Proposed config mapping (to confirm, D14):
+Confirmed config mapping (D14):
 
 | Config | Model id |
 |---|---|
 | default | `gemini-4-argon-medium` (observed default) |
-| efficient | `gemini-3.8-flash-low` (to confirm it is the cheapest per resolved task) |
+| efficient | `gemini-3.8-flash-medium` |
 | capable | `gemini-4-argon-high` |
 
 > ⚠ **Design impact: configs draw from different allowance buckets.** Default and capable (Argon) have **no 5-hour window**, only a weekly bucket. Efficient (Flash) uses the shared Gemini 5h and weekly buckets. The "resolved per full 5h window" headline and the "2 × 5h windows per config" cap in the plan don't apply to Argon. The allowance unit must be **per-bucket**, with **weekly-fraction** as the cross-config common unit (Flash also reports weekly). The runner cap needs a per-bucket definition. Argon quota is described by `/usage` as separate for Pro plans; its size is unknown, so the capable model could exhaust it within one pass.
@@ -77,16 +77,16 @@ Command: `agy -p <prompt> --model <id> --dangerously-skip-permissions --output-f
 
 ## Consequences for the plan
 
-1. Allowance accounting is **per bucket**, with weekly as the common unit (see Models).
+1. Allowance accounting is **per bucket**: Flash (`gemini-5h`, `gemini-weekly`) and Argon (`gemini-argon-wtu-weekly`) draw from disjoint pools, so cross-config comparison uses each config's respective weekly pool (`weekly_bucket_by_config`), disclosed as separate Pro allowances.
 2. Quota precision is **good**; the repeat-for-resolution argument (k≥2) is no longer driven by probe coarseness, only by run-to-run noise.
-3. The agent has web tools by default → the egress allowlist is mandatory in container mode. In host mode, leak audit only.
-4. Run `agy` from a scrubbed environment; do not set HOME.
+3. The agent has web tools by default (`search_web` runs server-side over Google's API) → combine the container egress allowlist proxy with `--settings` `permissions.deny` on web/browser tools and the transcript leak audit.
+4. Run `agy` from a scrubbed environment; on the host do not override `HOME`, and in container mode (D13a) provide a persistent unlocked keyring + `.gemini` volume.
 5. Exit codes are unreliable; parse the `result` event.
 
-## Open items needing the operator
+## Operator decisions
 
-| ID | Question | Options |
+| ID | Question | Status / Decision |
 |---|---|---|
-| D13 | In-container auth (D2) | (a) **Operator logs in once inside the container image, using the official `agy` OAuth flow into a named Docker volume** (some ToS risk, check the terms); (b) **host-mode worktree** with network limited by the sandbox/OS, documented as a deviation. Recommendation: **(b) for the MVP**. |
-| D14 | Config → model mapping | Confirm the table above. |
-| D15 | Argon weekly bucket may be small | Accept per-bucket accounting, or exclude Argon-high if one pass exhausts the weekly bucket. Decide after calibration. |
+| D13 | In-container auth (D2) | **Resolved: Option (a)** — Run `agy` inside the SWE-bench task container using a one-time official `agy` OAuth login stored in a named Docker volume (`subbench-agy-auth`, with `dbus-run-session` + `gnome-keyring-daemon`). Pure host worktree (b) rejected because the host lacks the historical `/opt/miniconda3/envs/testbed` environments. **Fallback: Option (c)** (host `agy` + bind-mounted `--network none` task container), documented in [`docs/implementation_plan.md`](implementation_plan.md#53-documented-fallback-for-d13-option-c--hybrid-host-agy--air-gapped-testbed-container). |
+| D14 | Config → model mapping | **Resolved:** `default` = `gemini-4-argon-medium`, `efficient` = `gemini-3.8-flash-medium`, `capable` = `gemini-4-argon-high`. |
+| D15 | Argon weekly bucket may be small | **Open until calibration:** Measure per-task `gemini-argon-wtu-weekly` burn at the end of Phase 3 before finalizing `k` / cap for `capable-argon-high`. |
