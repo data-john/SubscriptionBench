@@ -1,5 +1,8 @@
 # Worker Handover: Phase 3 Remediation & Phases 4–6 Implementation
 
+> [!NOTE]
+> **Status: Completed (`5585bed`..`194d924`, 2026-11-01).** All 4 milestones in this handover were implemented and verified offline with `0.00%` model quota burn. For post-review bugfixes uncovered during the Phases 3–6 audit and instructions for **Phases 7–8**, see [`docs/handover_phases7_8.md`](handover_phases7_8.md).
+
 **Date:** 2026-11-01  
 **Target scope:** Fix outstanding issues found in the Phase 3 review, then implement **Phase 4** (`subbench/quota/`), **Phase 5** (`subbench/runner.py`), and **Phase 6** (`subbench/grading.py`, `subbench/audit.py`), plus their CLI subcommands and offline tests.
 

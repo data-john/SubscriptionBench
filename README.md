@@ -127,18 +127,23 @@ Each benchmark run produces a reproducible dataset and a concise summary report 
 
 ## Development
 
-* Plan: [`docs/implementation_plan.md`](docs/implementation_plan.md). Phase 0/3 results: [`docs/phase0_findings.md`](docs/phase0_findings.md). Next-batch handover: [`docs/handover_phases4_6.md`](docs/handover_phases4_6.md).
-* Requires [`uv`](https://docs.astral.sh/uv/), Python 3.12, and Docker (suite validation and grading).
+* Plan: [`docs/implementation_plan.md`](docs/implementation_plan.md). Phase 0/3 results: [`docs/phase0_findings.md`](docs/phase0_findings.md). Next-batch handover (Phases 3–6 fixes + Phases 7–8): [`docs/handover_phases7_8.md`](docs/handover_phases7_8.md).
+* Requires [`uv`](https://docs.astral.sh/uv/), Python 3.12, and Docker (task containers, suite validation, and grading).
 
 ```bash
-uv sync                                   # runtime + dev tools
-uv run pytest                             # unit tests
+uv sync --group suite                     # runtime + dev + swebench/pyarrow tools
+uv run pytest                             # offline unit tests (0% quota burn)
 uv run ruff check . && uv run ruff format --check .
-uv run subbench init-db                   # create data/subbench.sqlite
+uv run subbench init-db                   # create/migrate data/subbench.sqlite
 uv run subbench validate experiments/baseline.yaml
 
-# Suite curation needs the extra `suite` dependency group (pyarrow, swebench)
-uv run --group suite subbench suite build --revision <sha> --version verified-mvp-v1 \
-    --out suites/verified-mvp-v1.json
-uv run --group suite subbench suite validate suites/verified-mvp-v1.json
+# Quota snapshot (zero quota cost) & dry-run schedule check
+uv run subbench quota snapshot
+uv run subbench run experiments/pilot-flash.yaml --dry-run
+
+# End-to-end cycle pipeline (run from a plain host terminal with no concurrent sessions)
+uv run subbench run experiments/pilot-flash.yaml
+uv run subbench grade --cycle-id <id>
+uv run subbench audit --cycle-id <id>
+uv run subbench report --cycle-id <id>    # Phase 7: Markdown, CSV/Parquet, SVG charts
 ```
