@@ -21,11 +21,25 @@ def fetch(revision: str, cache_dir: Path = Path("data/cache")) -> Path:
     if len(revision) != 40:
         raise ValueError("pin an exact 40-char commit sha, not a branch name")
     dest = cache_dir / f"verified-{revision[:12]}.parquet"
+    sidecar = dest.with_suffix(".sha256")
     if not dest.exists():
         cache_dir.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(".part")
         urllib.request.urlretrieve(parquet_url(revision), tmp)  # noqa: S310 (https, fixed host)
         tmp.rename(dest)
+        digest = sha256(dest)
+        sidecar.write_text(digest + "\n")
+    else:
+        digest = sha256(dest)
+        if sidecar.exists():
+            recorded = sidecar.read_text().strip()
+            if digest != recorded:
+                raise ValueError(
+                    f"sha256 mismatch for cached dataset {dest}:"
+                    f" recorded {recorded}, computed {digest}"
+                )
+        else:
+            sidecar.write_text(digest + "\n")
     return dest
 
 

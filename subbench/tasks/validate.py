@@ -98,6 +98,8 @@ def run_harness(
         str(timeout),
         "--run_id",
         run_id,
+        "--cache_level",
+        "instance",
     ]
     return subprocess.run(cmd, cwd=workdir, capture_output=True, text=True, check=False)
 

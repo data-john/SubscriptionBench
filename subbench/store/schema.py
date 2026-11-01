@@ -158,6 +158,12 @@ MIGRATIONS: list[str] = [
         created_at  TEXT NOT NULL
     );
     """,
+    # --- v2 ---
+    """
+    ALTER TABLE environment
+        ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'container'
+        CHECK (execution_mode IN ('container', 'hybrid_host'));
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

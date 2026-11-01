@@ -77,3 +77,43 @@ def test_quota_snapshot_is_per_bucket(conn):
         )
     n = conn.execute("SELECT COUNT(*) FROM quota_snapshots WHERE attempt_id=?", (aid,)).fetchone()
     assert n[0] == 2
+
+
+def test_migration_progression_and_execution_mode():
+    from subbench.store.schema import MIGRATIONS
+
+    raw_conn = connect(":memory:")
+    # Manually apply only v1
+    raw_conn.executescript("BEGIN;\n" + MIGRATIONS[0] + "\nPRAGMA user_version = 1;\nCOMMIT;")
+    assert schema_version(raw_conn) == 1
+    # execution_mode should not exist yet in v1
+    cols_v1 = {r[1] for r in raw_conn.execute("PRAGMA table_info(environment)")}
+    assert "execution_mode" not in cols_v1
+
+    # Insert environment row in v1
+    _seed(raw_conn)
+    raw_conn.execute(
+        "INSERT INTO environment (experiment_id, agy_path, agy_version, os, recorded_at)"
+        " VALUES (1, '/path', '1.0', 'linux', 'now')"
+    )
+
+    # Run init_db to migrate to latest (v2)
+    new_version = init_db(raw_conn)
+    assert new_version == SCHEMA_VERSION == 2
+
+    # Check execution_mode added with default 'container'
+    row = raw_conn.execute("SELECT execution_mode FROM environment WHERE id=1").fetchone()
+    assert row["execution_mode"] == "container"
+
+    # Verify check constraint
+    raw_conn.execute(
+        "INSERT INTO environment (experiment_id, agy_path, agy_version, os,"
+        " recorded_at, execution_mode)"
+        " VALUES (1, '/path', '1.0', 'linux', 'now', 'hybrid_host')"
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        raw_conn.execute(
+            "INSERT INTO environment (experiment_id, agy_path, agy_version, os,"
+            " recorded_at, execution_mode)"
+            " VALUES (1, '/path', '1.0', 'linux', 'now', 'invalid_mode')"
+        )

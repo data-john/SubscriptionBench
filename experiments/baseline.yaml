@@ -20,7 +20,10 @@ configs:
     model_id: gemini-4-argon-high
     buckets: [gemini-argon-wtu-weekly]
 quota:
-  common_unit_bucket: gemini-weekly
+  weekly_bucket_by_config:
+    default-argon-medium: gemini-argon-wtu-weekly
+    efficient-flash-medium: gemini-weekly
+    capable-argon-high: gemini-argon-wtu-weekly
   primary_bucket_by_config:
     default-argon-medium: gemini-argon-wtu-weekly
     efficient-flash-medium: gemini-5h

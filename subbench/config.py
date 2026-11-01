@@ -57,20 +57,44 @@ class ConfigSpec(_Strict):
     buckets: list[NonEmpty] = Field(min_length=1)
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
 
+    @model_validator(mode="after")
+    def _validate_buckets(self) -> ConfigSpec:
+        invalid = set(self.buckets) - set(KNOWN_BUCKETS)
+        if invalid:
+            raise ValueError(f"Unknown bucket(s) in buckets: {invalid}. Must be in {KNOWN_BUCKETS}")
+        return self
+
 
 class QuotaPolicy(_Strict):
     """Quota-related guards."""
 
-    # Buckets used as allowance units when computing efficiency. Weekly is the only unit
-    # common to every Gemini config (Argon has no 5h bucket).
+    # Buckets used as allowance units when computing efficiency.
     primary_bucket_by_config: dict[NonEmpty, NonEmpty] = Field(default_factory=dict)
-    common_unit_bucket: NonEmpty = "gemini-weekly"
-    max_windows_per_config_cycle: int = Field(default=2, ge=1)
+    weekly_bucket_by_config: dict[NonEmpty, NonEmpty] = Field(default_factory=dict)
+    max_5h_windows_per_config_cycle: int = Field(default=2, ge=1)
+    on_weekly_exhaustion: Literal["abort_config", "wait"] = "abort_config"
+    max_weekly_fraction_per_config_cycle: float | None = Field(default=None, gt=0, le=1.0)
     idle_check_seconds: int = Field(default=120, ge=0)
     # An unexplained drop of more than this fraction between post(i) and pre(i+1) is
     # recorded as external use.
     external_use_threshold: float = Field(default=1e-4, ge=0)
     use_g1_credits: Literal[False] = False  # must stay off: no silent paid overage
+
+    @model_validator(mode="after")
+    def _validate_buckets(self) -> QuotaPolicy:
+        invalid_primary = set(self.primary_bucket_by_config.values()) - set(KNOWN_BUCKETS)
+        if invalid_primary:
+            raise ValueError(
+                f"Unknown bucket(s) in primary_bucket_by_config: {invalid_primary}."
+                f" Must be in {KNOWN_BUCKETS}"
+            )
+        invalid_weekly = set(self.weekly_bucket_by_config.values()) - set(KNOWN_BUCKETS)
+        if invalid_weekly:
+            raise ValueError(
+                f"Unknown bucket(s) in weekly_bucket_by_config: {invalid_weekly}."
+                f" Must be in {KNOWN_BUCKETS}"
+            )
+        return self
 
 
 class ExperimentManifest(_Strict):
@@ -96,9 +120,31 @@ class ExperimentManifest(_Strict):
             raise ValueError("config labels must be unique")
         if not Path(self.agy_path).is_absolute():
             raise ValueError("agy_path must be absolute (agy may not be on PATH)")
-        unknown = set(self.quota.primary_bucket_by_config) - set(labels)
-        if unknown:
-            raise ValueError(f"primary_bucket_by_config references unknown configs: {unknown}")
+        configs_by_label = {c.label: c for c in self.configs}
+
+        unknown_primary = set(self.quota.primary_bucket_by_config) - set(labels)
+        if unknown_primary:
+            raise ValueError(
+                f"primary_bucket_by_config references unknown configs: {unknown_primary}"
+            )
+        for label, bucket in self.quota.primary_bucket_by_config.items():
+            if bucket not in configs_by_label[label].buckets:
+                raise ValueError(
+                    f"primary bucket '{bucket}' for config '{label}' is not in"
+                    f" config's buckets: {configs_by_label[label].buckets}"
+                )
+
+        unknown_weekly = set(self.quota.weekly_bucket_by_config) - set(labels)
+        if unknown_weekly:
+            raise ValueError(
+                f"weekly_bucket_by_config references unknown configs: {unknown_weekly}"
+            )
+        for label, bucket in self.quota.weekly_bucket_by_config.items():
+            if bucket not in configs_by_label[label].buckets:
+                raise ValueError(
+                    f"weekly bucket '{bucket}' for config '{label}' is not in"
+                    f" config's buckets: {configs_by_label[label].buckets}"
+                )
         return self
 
     def canonical_json(self) -> str:
