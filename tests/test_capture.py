@@ -94,3 +94,37 @@ def test_save_attempt_artifacts(tmp_path: Path):
     assert patch_path.read_text() == "diff --git ..."
     assert (artifacts / "test.log").exists()
     assert (artifacts / "test.log").read_text() == "dummy log"
+
+
+def test_capture_excludes_binary_files(tmp_path: Path):
+    repo = tmp_path / "repo"
+    initial_sha = _init_repo(repo)
+
+    # Valid code change
+    (repo / "solution.py").write_text("def solve(): return True\n")
+    # Untracked binary file (e.g. from tests or cache)
+    (repo / "test_artifact.png").write_bytes(b"\x00\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00")
+    (repo / "cache.db").write_bytes(b"SQLite format 3\x00\x10\x00\x01\x01\x00")
+
+    patch, patch_bytes = capture_patch_in_repo(repo, initial_sha)
+    assert patch_bytes > 0
+    assert "solution.py" in patch
+    assert "test_artifact.png" not in patch
+    assert "cache.db" not in patch
+    assert "Binary files" not in patch
+
+    # Verify that git apply --check passes cleanly on a fresh checkout
+    fresh_clone = tmp_path / "fresh_clone"
+    subprocess.run(["git", "clone", str(repo), str(fresh_clone)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(fresh_clone), "checkout", initial_sha],
+        check=True,
+        capture_output=True,
+    )
+    apply_res = subprocess.run(
+        ["git", "-C", str(fresh_clone), "apply", "--check"],
+        input=patch,
+        text=True,
+        capture_output=True,
+    )
+    assert apply_res.returncode == 0

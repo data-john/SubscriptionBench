@@ -56,6 +56,9 @@ class ConfigSpec(_Strict):
     # Buckets this model draws from (verified in Phase 0); used by the quota analysis.
     buckets: list[NonEmpty] = Field(min_length=1)
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+    max_passes: int | None = Field(
+        default=None, ge=1, description="Optional cap on executed passes for this config."
+    )
 
     @model_validator(mode="after")
     def _validate_buckets(self) -> ConfigSpec:
@@ -144,6 +147,13 @@ class ExperimentManifest(_Strict):
                 raise ValueError(
                     f"weekly bucket '{bucket}' for config '{label}' is not in"
                     f" config's buckets: {configs_by_label[label].buckets}"
+                )
+
+        for c in self.configs:
+            if c.max_passes is not None and c.max_passes > self.passes:
+                raise ValueError(
+                    f"Config '{c.label}' has max_passes={c.max_passes} which exceeds"
+                    f" manifest passes={self.passes}"
                 )
         return self
 

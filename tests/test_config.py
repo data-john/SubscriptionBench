@@ -150,3 +150,20 @@ def test_suite_duplicate_ids_rejected():
         SuiteManifest.model_validate(
             {"version": "v", "dataset_revision": "x", "seed": 1, "tasks": tasks}
         )
+
+
+def test_config_spec_max_passes():
+    # Valid: max_passes <= passes
+    exp = ExperimentManifest.model_validate(
+        _exp(passes=2, configs=[_cfg("c1", max_passes=1), _cfg("c2", max_passes=2)])
+    )
+    assert exp.configs[0].max_passes == 1
+    assert exp.configs[1].max_passes == 2
+
+    # Invalid: max_passes > passes
+    with pytest.raises(ValidationError, match="exceeds manifest passes"):
+        ExperimentManifest.model_validate(_exp(passes=1, configs=[_cfg("c1", max_passes=2)]))
+
+    # Invalid: max_passes < 1
+    with pytest.raises(ValidationError):
+        ConfigSpec.model_validate(_cfg("c1", max_passes=0))

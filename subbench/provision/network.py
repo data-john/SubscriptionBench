@@ -14,6 +14,16 @@ NETWORK_INTERNAL = "subbench-internal"
 NETWORK_EGRESS = "subbench-egress"
 PROXY_CONTAINER = "subbench-proxy"
 
+DEFAULT_EGRESS_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "daily-cloudcode-pa.googleapis.com",
+        "www.googleapis.com",
+        "aicode.googleapis.com",
+        "oauth2.googleapis.com",
+        "accounts.google.com",
+    }
+)
+
 
 def network_exists(name: str) -> bool:
     res = subprocess.run(
@@ -155,11 +165,9 @@ class EgressProxyManager:
         proxy_url = f"http://{proxy_host}:{self.port}"
 
         proxy_env = {
-            "HTTP_PROXY": proxy_url,
             "HTTPS_PROXY": proxy_url,
-            "http_proxy": proxy_url,
             "https_proxy": proxy_url,
-            "NO_PROXY": "localhost,127.0.0.1",
+            "NO_PROXY": "localhost,127.0.0.1,::1",
         }
         logger.info("Proxy container started. Internal proxy URL: %s", proxy_url)
         return proxy_env

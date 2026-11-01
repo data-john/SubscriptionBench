@@ -1,7 +1,14 @@
 import json
+import sys
+import time
 from pathlib import Path
 
-from subbench.agents.antigravity import parse_stream_json
+from subbench.agents.antigravity import (
+    DEFAULT_SETTINGS,
+    AntigravityAdapter,
+    parse_stream_json,
+)
+from subbench.agents.prompts import RenderedPrompt
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -101,3 +108,67 @@ def test_parse_truncated_timeout_stream():
     assert summary.halt_reason == "timeout"
     assert summary.result_event is None
     assert len(summary.events) == 2  # truncated line safely ignored
+
+
+def test_antigravity_adapter_command_and_deny_list():
+    adapter = AntigravityAdapter(model_id="gemini-3.8-flash")
+    cmd = adapter.build_exec_command("solve problem")
+    assert "--disable-slash-commands" in cmd
+    assert "--output-format" in cmd
+    assert "stream-json" in cmd
+
+    deny_list = DEFAULT_SETTINGS["permissions"]["deny"]
+    expected_denied = [
+        "search_web",
+        "search_web(*)",
+        "read_url",
+        "read_url(*)",
+        "read_url_content",
+        "read_url_content(*)",
+        "open_browser_url",
+        "open_browser_url(*)",
+        "read_browser_page",
+        "read_browser_page(*)",
+        "capture_browser_screenshot",
+        "capture_browser_screenshot(*)",
+        "capture_browser_console_logs",
+        "click_browser_pixel",
+        "execute_browser_javascript",
+        "list_browser_pages",
+        "browser_subagent",
+        "browser_*",
+    ]
+    for tool in expected_denied:
+        assert tool in deny_list
+
+
+def test_antigravity_adapter_timeout_offline(monkeypatch, tmp_path: Path):
+    adapter = AntigravityAdapter(model_id="gemini-3.8-flash")
+    raw_path = tmp_path / "stream_json.ndjson"
+    prompt = RenderedPrompt(text="solve this", template_id="minimal-v1", sha256_hash="abc")
+
+    # Command that outputs one init line immediately, then sleeps for 30s
+    hanging_py = (
+        'import time; print(\'{"event":"init","init":{"model":"gemini-3.8-flash"}}\', flush=True); '
+        "time.sleep(30)"
+    )
+    hanging_cmd = [sys.executable, "-c", hanging_py]
+    monkeypatch.setattr(adapter, "build_container_exec_args", lambda c, p: hanging_cmd)
+
+    t0 = time.monotonic()
+    outcome = adapter.run_attempt(
+        instance_id="pytest-dev__pytest-5809",
+        prompt=prompt,
+        container_id="dummy-container",
+        timeout_seconds=1,
+        raw_output_path=raw_path,
+    )
+    elapsed = time.monotonic() - t0
+
+    assert elapsed < 3.0, f"Process took {elapsed}s, expected ~1s timeout"
+    assert outcome.halt_reason == "timeout"
+    assert outcome.exit_code == -9
+    assert raw_path.exists()
+    content = raw_path.read_text()
+    assert '{"event":"init"' in content
+    assert len(outcome.events) >= 1

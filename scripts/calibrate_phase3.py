@@ -23,19 +23,16 @@ from subbench.agents.antigravity import AntigravityAdapter
 from subbench.agents.prompts import render_prompt
 from subbench.provision.capture import capture_patch_in_container, save_attempt_artifacts
 from subbench.provision.images import build_overlay_image
-from subbench.provision.network import EgressProxyManager, launch_task_container
+from subbench.provision.network import (
+    DEFAULT_EGRESS_ALLOWLIST,
+    EgressProxyManager,
+    launch_task_container,
+)
 from subbench.provision.workspace import prepare_workspace
 from subbench.tasks.validate import find_report, run_harness
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATASET_JSONL = REPO_ROOT / "data" / "validation" / "dataset.jsonl"
-DEFAULT_ALLOWLIST = {
-    "daily-cloudcode-pa.googleapis.com",
-    "www.googleapis.com",
-    "aicode.googleapis.com",
-    "oauth2.googleapis.com",
-    "accounts.google.com",
-}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("calibrate")
@@ -88,9 +85,7 @@ def run_calibration_attempt(
     timeout_minutes: int = 30,
     output_dir: Path | None = None,
 ) -> dict[str, Any]:
-    out_dir = output_dir or (
-        REPO_ROOT / "experiments" / "calibration" / f"{instance_id}_{model_id}"
-    )
+    out_dir = output_dir or (REPO_ROOT / "artifacts" / "calibration" / f"{instance_id}_{model_id}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     task_data = load_task_data(instance_id)
@@ -107,7 +102,7 @@ def run_calibration_attempt(
 
     # 2. Start egress proxy
     proxy_log = out_dir / "proxy.log"
-    proxy_mgr = EgressProxyManager(allowlist=DEFAULT_ALLOWLIST, log_path=proxy_log)
+    proxy_mgr = EgressProxyManager(allowlist=DEFAULT_EGRESS_ALLOWLIST, log_path=proxy_log)
     proxy_env = proxy_mgr.start()
 
     container_name = f"subbench-calib-{instance_id.replace('__', '-').replace('_', '-')}"

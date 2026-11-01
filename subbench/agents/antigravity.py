@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import threading
 import time
 from collections.abc import Iterable
 from pathlib import Path
@@ -45,10 +46,23 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "view_file(*)",
         ],
         "deny": [
-            "search_web(*)",
             "search_web",
-            "read_url(*)",
+            "search_web(*)",
             "read_url",
+            "read_url(*)",
+            "read_url_content",
+            "read_url_content(*)",
+            "open_browser_url",
+            "open_browser_url(*)",
+            "read_browser_page",
+            "read_browser_page(*)",
+            "capture_browser_screenshot",
+            "capture_browser_screenshot(*)",
+            "capture_browser_console_logs",
+            "click_browser_pixel",
+            "execute_browser_javascript",
+            "list_browser_pages",
+            "browser_subagent",
             "browser_*",
         ],
     },
@@ -163,6 +177,7 @@ class AntigravityAdapter:
             self.model_id,
             "--output-format",
             "stream-json",
+            "--disable-slash-commands",
             "--log-file",
             "/tmp/agy-cli.log",
             "--settings",
@@ -172,6 +187,41 @@ class AntigravityAdapter:
             cmd.extend(["--effort", self.effort])
         cmd.extend(self.extra_flags)
         return cmd
+
+    def build_container_exec_args(self, container_id: str, prompt_text: str) -> list[str]:
+        inner_cmd = self.build_exec_command(prompt_text)
+        return [
+            "docker",
+            "exec",
+            "-i",
+            "-e",
+            "PATH=/opt/miniconda3/envs/testbed/bin:/usr/local/bin:/usr/bin:/bin",
+            "-e",
+            "SUBBENCH_ATTEMPT_RUN=1",
+            "-w",
+            "/testbed",
+            container_id,
+            "/usr/local/bin/entrypoint-agy.sh",
+            *inner_cmd,
+        ]
+
+    def _kill_container_processes(self, container_id: str) -> None:
+        """Kill running agy and child processes inside container without killing PID 1."""
+        try:
+            subprocess.run(
+                ["docker", "exec", container_id, "pkill", "-KILL", "-f", "agy"],
+                capture_output=True,
+                timeout=5,
+                check=False,
+            )
+            subprocess.run(
+                ["docker", "exec", container_id, "pkill", "-KILL", "-f", "/testbed"],
+                capture_output=True,
+                timeout=5,
+                check=False,
+            )
+        except Exception as e:
+            logger.warning("Failed to kill container processes in %s: %s", container_id, e)
 
     def run_attempt(
         self,
@@ -183,25 +233,38 @@ class AntigravityAdapter:
         raw_output_path: Path | None = None,
     ) -> AttemptOutcome:
         ver_pre = self.get_version(container_id)
-        inner_cmd = self.build_exec_command(prompt.text)
-
-        exec_cmd = [
-            "docker",
-            "exec",
-            "-i",
-            "-e",
-            "PATH=/opt/miniconda3/envs/testbed/bin:/usr/local/bin:/usr/bin:/bin",
-            "-w",
-            "/testbed",
-            container_id,
-            "/usr/local/bin/entrypoint-agy.sh",
-            *inner_cmd,
-        ]
+        exec_cmd = self.build_container_exec_args(container_id, prompt.text)
 
         t0 = time.monotonic()
         stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
         exit_code: int | None = None
         error_text: str | None = None
+
+        def _read_stream(pipe, lines_dest: list[str], out_path: Path | None) -> None:
+            f = None
+            if out_path:
+                try:
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    f = open(out_path, "a", encoding="utf-8")
+                except Exception as ex:
+                    logger.warning("Failed to open %s for raw output: %s", out_path, ex)
+            try:
+                for line in iter(pipe.readline, ""):
+                    lines_dest.append(line)
+                    if f:
+                        f.write(line)
+                        f.flush()
+            finally:
+                if f:
+                    try:
+                        f.close()
+                    except Exception:
+                        pass
+                try:
+                    pipe.close()
+                except Exception:
+                    pass
 
         try:
             proc = subprocess.Popen(
@@ -211,24 +274,42 @@ class AntigravityAdapter:
                 text=True,
                 bufsize=1,
             )
+
+            assert proc.stdout is not None
+            assert proc.stderr is not None
+            t_out = threading.Thread(
+                target=_read_stream,
+                args=(proc.stdout, stdout_lines, raw_output_path),
+                daemon=True,
+            )
+            t_err = threading.Thread(
+                target=_read_stream,
+                args=(proc.stderr, stderr_lines, None),
+                daemon=True,
+            )
+            t_out.start()
+            t_err.start()
+
             try:
-                assert proc.stdout is not None
-                for line in proc.stdout:
-                    stdout_lines.append(line)
-                    if raw_output_path:
-                        with open(raw_output_path, "a") as f:
-                            f.write(line)
                 proc.wait(timeout=timeout_seconds)
                 exit_code = proc.returncode
             except subprocess.TimeoutExpired:
                 logger.warning("Attempt timed out after %ds; killing process", timeout_seconds)
-                proc.kill()
-                proc.wait()
+                self._kill_container_processes(container_id)
+                try:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
                 exit_code = -9
                 error_text = f"Timeout after {timeout_seconds}s"
-            if proc.stderr:
-                stderr_content = proc.stderr.read()
-                if stderr_content and not error_text:
+
+            t_out.join(timeout=2)
+            t_err.join(timeout=2)
+
+            if stderr_lines and not error_text:
+                stderr_content = "".join(stderr_lines).strip()
+                if stderr_content:
                     error_text = stderr_content[-1000:]
         except Exception as e:
             logger.exception("Failed to run docker exec: %s", e)
@@ -241,6 +322,12 @@ class AntigravityAdapter:
         summary = parse_stream_json(stdout_lines)
         if exit_code == -9 and summary.halt_reason != "completed":
             summary.halt_reason = "timeout"
+        elif summary.result_event is None and exit_code != 0:
+            summary.halt_reason = (
+                "infra_error"
+                if (error_text and any(inf in error_text.lower() for inf in INFRA_INDICATORS))
+                else "agent_error"
+            )
 
         return AttemptOutcome(
             halt_reason=summary.halt_reason,
