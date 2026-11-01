@@ -79,6 +79,49 @@ def run_cmd(
         typer.echo(f"Cycle {c_id} completed successfully.")
 
 
+@app.command("grade")
+def grade_cmd(
+    cycle_id: Annotated[int, typer.Option(help="Cycle ID to grade.")],
+    regrade: Annotated[
+        bool, typer.Option("--regrade", help="Regrade already graded attempts.")
+    ] = False,
+    db: Annotated[Path, typer.Option(help="SQLite database path.")] = DEFAULT_DB,
+    max_workers: Annotated[int, typer.Option(help="Max concurrent harness workers.")] = 2,
+) -> None:
+    """Run offline SWE-bench grading for a cycle."""
+    from .grading import grade_cycle
+    from .store import connect, init_db
+
+    conn = connect(db)
+    init_db(conn)
+    res = grade_cycle(conn, cycle_id=cycle_id, regrade=regrade, max_workers=max_workers)
+    typer.echo(
+        f"Grading complete for cycle {cycle_id}: {res['resolved']}/{res['graded']} resolved."
+    )
+
+
+@app.command("audit")
+def audit_cmd(
+    cycle_id: Annotated[int, typer.Option(help="Cycle ID to audit.")],
+    db: Annotated[Path, typer.Option(help="SQLite database path.")] = DEFAULT_DB,
+) -> None:
+    """Audit cycle transcripts and proxy logs for leaks."""
+    from .audit import audit_cycle
+    from .store import connect, init_db
+
+    conn = connect(db)
+    init_db(conn)
+    res = audit_cycle(conn, cycle_id=cycle_id)
+    n_tot = res["total_findings"]
+    n_leak = res["leak"]
+    n_warn = res["warn"]
+    n_info = res["info"]
+    typer.echo(
+        f"Audit complete for cycle {cycle_id}: "
+        f"{n_tot} findings ({n_leak} leaks, {n_warn} warnings, {n_info} info)."
+    )
+
+
 @suite_app.command("build")
 def suite_build(
     revision: Annotated[str, typer.Option(help="Exact HF dataset commit sha (40 chars).")],
