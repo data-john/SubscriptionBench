@@ -254,7 +254,7 @@ class AntigravityAdapter:
             if out_path:
                 try:
                     out_path.parent.mkdir(parents=True, exist_ok=True)
-                    f = open(out_path, "a", encoding="utf-8")
+                    f = open(out_path, "w", encoding="utf-8")
                 except Exception as ex:
                     logger.warning("Failed to open %s for raw output: %s", out_path, ex)
             try:

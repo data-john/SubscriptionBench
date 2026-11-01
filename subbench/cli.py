@@ -68,6 +68,9 @@ def run_cmd(
     idle_seconds: Annotated[
         int | None, typer.Option("--idle-seconds", help="Override pre-flight idle check seconds.")
     ] = None,
+    artifacts_dir: Annotated[
+        Path, typer.Option("--artifacts-dir", help="Base directory for cycle artifacts.")
+    ] = Path("artifacts"),
 ) -> None:
     """Run an experiment cycle or print a dry run."""
     from .runner import Runner
@@ -76,6 +79,7 @@ def run_cmd(
         manifest_path=manifest,
         db_path=db,
         skip_idle_check=skip_idle_check,
+        artifacts_dir=artifacts_dir,
     )
     if idle_seconds is not None:
         runner.manifest.quota.idle_check_seconds = idle_seconds
@@ -92,6 +96,9 @@ def grade_cmd(
     ] = False,
     db: Annotated[Path, typer.Option(help="SQLite database path.")] = DEFAULT_DB,
     max_workers: Annotated[int, typer.Option(help="Max concurrent harness workers.")] = 2,
+    workdir: Annotated[
+        Path | None, typer.Option("--workdir", help="Grading working directory.")
+    ] = None,
 ) -> None:
     """Run offline SWE-bench grading for a cycle."""
     from .grading import grade_cycle
@@ -99,7 +106,9 @@ def grade_cmd(
 
     conn = connect(db)
     init_db(conn)
-    res = grade_cycle(conn, cycle_id=cycle_id, regrade=regrade, max_workers=max_workers)
+    res = grade_cycle(
+        conn, cycle_id=cycle_id, regrade=regrade, max_workers=max_workers, workdir=workdir
+    )
     typer.echo(
         f"Grading complete for cycle {cycle_id}: {res['resolved']}/{res['graded']} resolved."
     )

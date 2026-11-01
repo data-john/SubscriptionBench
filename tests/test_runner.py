@@ -144,6 +144,7 @@ def test_schedule_pass_interleaving_and_max_passes(tmp_path: Path):
 def test_runner_happy_path_state_machine(tmp_path: Path):
     m_path, _ = _make_dummy_manifest_and_suite(tmp_path, task_limit=1, passes=1)
     db_path = tmp_path / "test.db"
+    art_dir = tmp_path / "artifacts"
 
     runner = Runner(
         manifest_path=m_path,
@@ -152,20 +153,21 @@ def test_runner_happy_path_state_machine(tmp_path: Path):
         adapter_factory=lambda cfg: FakeAgentAdapter(halt_reason="completed"),
         provisioner=FakeProvisioner(),
         skip_idle_check=True,
+        artifacts_dir=art_dir,
     )
 
     cycle_id = runner.run()
     assert cycle_id == 1
 
     # Verify prompt.txt contains real problem statement and NOT "Problem placeholder"
-    prompt_file = Path("artifacts") / "cycles" / f"cycle-{cycle_id}" / "attempt-1" / "prompt.txt"
+    prompt_file = art_dir / "cycles" / f"cycle-{cycle_id}" / "attempt-1" / "prompt.txt"
     assert prompt_file.exists()
     prompt_text = prompt_file.read_text()
     assert "Problem placeholder" not in prompt_text
     assert len(prompt_text) > 100
 
     # Verify stderr.txt exists
-    stderr_file = Path("artifacts") / "cycles" / f"cycle-{cycle_id}" / "attempt-1" / "stderr.txt"
+    stderr_file = art_dir / "cycles" / f"cycle-{cycle_id}" / "attempt-1" / "stderr.txt"
     assert stderr_file.exists()
 
     conn = connect(db_path)
@@ -199,6 +201,7 @@ def test_runner_weekly_exhaustion_abort_config(tmp_path: Path):
         adapter_factory=lambda cfg: FakeAgentAdapter(halt_reason="completed"),
         provisioner=FakeProvisioner(),
         skip_idle_check=True,
+        artifacts_dir=tmp_path / "artifacts",
     )
 
     cycle_id = runner.run()
@@ -284,6 +287,7 @@ def test_runner_5h_exhaustion_retry_and_cap(tmp_path: Path):
         provisioner=FakeProvisioner(),
         sleep_fn=lambda s: slept_durations.append(s),
         skip_idle_check=True,
+        artifacts_dir=tmp_path / "artifacts",
     )
 
     cycle_id = runner.run()
@@ -347,6 +351,7 @@ def test_runner_crash_recovery_resume(tmp_path: Path):
         adapter_factory=lambda cfg: FakeAgentAdapter(halt_reason="completed"),
         provisioner=FakeProvisioner(),
         skip_idle_check=True,
+        artifacts_dir=tmp_path / "artifacts",
     )
     runner.run(cycle_id=cycle_id)
 
@@ -400,6 +405,7 @@ def test_runner_container_cleanup_on_adapter_exception(tmp_path: Path):
         adapter_factory=exploding_adapter,
         provisioner=TrackingEnv(),
         skip_idle_check=True,
+        artifacts_dir=tmp_path / "artifacts",
     )
 
     cycle_id = runner.run()
@@ -458,6 +464,7 @@ def test_runner_max_weekly_fraction_per_config_cycle(tmp_path: Path):
         adapter_factory=lambda cfg: FakeAgentAdapter(halt_reason="completed"),
         provisioner=FakeProvisioner(),
         skip_idle_check=True,
+        artifacts_dir=tmp_path / "artifacts",
     )
 
     cycle_id = runner.run()
@@ -534,6 +541,7 @@ def test_runner_pre_attempt_5h_exhaustion(tmp_path: Path):
         provisioner=CountingProvisioner(),
         sleep_fn=lambda s: slept.append(s),
         skip_idle_check=True,
+        artifacts_dir=tmp_path / "artifacts",
     )
 
     runner.run()

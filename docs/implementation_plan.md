@@ -1,7 +1,7 @@
 # SubscriptionBench: Implementation Plan (MVP: Antigravity + Google AI Pro)
 
 > [!NOTE]
-> **Revision 5 (2026-11-01).** Phases 0–6 are implemented and verified offline (`91 passed`, `0.00%` model quota burn across commits `5585bed`..`194d924`). Code review of Phases 3–6 uncovered targeted runtime bugs in `runner.py`, `audit.py`, `grading.py`, and `quota/base.py` (most critically a `"Problem placeholder"` stub in `Runner.run` and `tool_info` JSON-path mismatch in `audit.py`) that **must** be fixed before any live Phase 8 run. Queues those fixes + **Phase 7 (`subbench/report/`)** + quota-gated **Phase 8** execution in [`docs/handover_phases7_8.md`](handover_phases7_8.md).
+> **Revision 6 (2026-11-01).** Phases 0–7 are implemented, audited, and verified 100% offline (`103 passed`, `0.00%` model quota burn). Includes `artifacts_dir` isolation so offline `pytest` runs never touch live `artifacts/cycles/` directories, `"w"` stream truncation in `AntigravityAdapter`, same-experiment longitudinal scoping, and primary-bucket (`gemini-5h`) visibility in `summary.md`. Ready for **Phase 8 Stage 1** (`pilot-flash.yaml`) from a standalone host terminal.
 
 ---
 
@@ -100,7 +100,7 @@ Recorded in [`docs/phase0_findings.md`](phase0_findings.md).
 
 ### Phase 3: Provisioning and agent adapter — **Complete** (`5585bed`)
 - [x] Thin overlay & keyring auth, `HTTPS_PROXY`-only task container networking, `DEFAULT_EGRESS_ALLOWLIST`, `--disable-slash-commands`, 18-tool web/browser `permissions.deny`, daemon-thread stdout streaming with real subprocess timeout & in-container `pkill`, binary-safe patch capture (`unstage_binary_files`), and `experiments/` repo hygiene.
-- [ ] **Minor adapter follow-up (queued in Phase 7–8 Milestone 1):** Persist `stderr` stream to `attempt_dir / "stderr.txt"` so `attempts.stderr_path` resolves on disk.
+- [x] **Adapter follow-ups (`df8e6de` + post-review hardening):** Persisted `stderr` stream to `attempt_dir / "stderr.txt"`, switched stream writer to `"w"` mode so attempts never append onto stale files, and isolated `Runner(artifacts_dir=...)` in offline tests.
 
 ### Phase 4: Quota probe — **Implemented** (`0a556d1`, fixes in `df8e6de`)
 - [x] `QuotaSnapshot`, `parse_usage_json` (with rolling `pre == 1.0` first-spend handling and defensive credit-field check), `detect_external_use`, `check_idle`, `save_quota_snapshot`, `AgyUsageProbe` (`subbench-agy:probe`), `ManualQuotaProbe`, and `subbench quota snapshot`.

@@ -88,7 +88,18 @@ def test_grade_and_audit_cli(tmp_path: Path):
     conn.commit()
 
     # Test grade CLI
-    grade_res = runner.invoke(app, ["grade", "--cycle-id", str(cycle_id), "--db", str(db_path)])
+    grade_res = runner.invoke(
+        app,
+        [
+            "grade",
+            "--cycle-id",
+            str(cycle_id),
+            "--db",
+            str(db_path),
+            "--workdir",
+            str(tmp_path / "grading"),
+        ],
+    )
     assert grade_res.exit_code == 0, grade_res.output
     assert "Grading complete" in grade_res.output
 

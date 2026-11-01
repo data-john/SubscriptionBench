@@ -49,12 +49,14 @@ def render_summary_markdown(report: CycleReportData) -> str:
     # 4. Executive Summary Table
     lines.append("## 1. Executive Performance & Quota Efficiency\n")
     lines.append(
-        "| Config | Role | Model | Resolve Rate (Planned) | Wilson 95% CI | Weekly Quota (pp) | "
-        "Tasks / 100% Weekly | pp / Resolved | Median Time |"
+        "| Config | Role | Model | Resolve Rate (Planned) | Wilson 95% CI | Primary Quota | "
+        "Weekly Quota (pp) | Tasks / 100% Weekly | pp / Resolved (Weekly) | Median Time |"
     )
-    lines.append("|---|---|---|---|---|---|---|---|---|")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|")
     for cm in report.configs:
         ci_str = f"[{cm.wilson_ci[0] * 100:.1f}%, {cm.wilson_ci[1] * 100:.1f}%]"
+        primary_pp = cm.consumed_pp.get(cm.primary_bucket, 0.0) if cm.primary_bucket else 0.0
+        primary_str = f"{primary_pp:.2f}pp (`{cm.primary_bucket}`)" if cm.primary_bucket else "N/A"
         weekly_pp = cm.consumed_pp.get(cm.weekly_bucket, 0.0) if cm.weekly_bucket else 0.0
         tasks_full = (
             f"{cm.tasks_per_full_bucket_weekly:.1f}"
@@ -71,7 +73,7 @@ def render_summary_markdown(report: CycleReportData) -> str:
         lines.append(
             f"| `{cm.label}` | {cm.role} | `{cm.model_id}` | "
             f"**{cm.resolve_rate_planned * 100:.1f}%** ({cm.resolved_slots}/{cm.planned_slots}) | "
-            f"{ci_str} | {weekly_pp:.1f}pp | {tasks_full} | {pp_res} | {med_w} |"
+            f"{ci_str} | {primary_str} | {weekly_pp:.2f}pp | {tasks_full} | {pp_res} | {med_w} |"
         )
     lines.append("")
 

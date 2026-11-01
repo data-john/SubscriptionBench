@@ -429,6 +429,7 @@ class Runner:
         skip_idle_check: bool = False,
         min_free_gb: float = 15.0,
         problem_statements: Mapping[str, str] | None = None,
+        artifacts_dir: Path = Path("artifacts"),
     ) -> None:
         self.manifest_path = manifest_path
         self.db_path = db_path
@@ -448,6 +449,7 @@ class Runner:
         self.skip_idle_check = skip_idle_check
         self.min_free_gb = min_free_gb
         self.problem_statements = problem_statements
+        self.artifacts_dir = artifacts_dir
 
     def run_preflight(self, conn: sqlite3.Connection) -> None:
         """Verify pre-flight constraints before starting task execution."""
@@ -529,9 +531,9 @@ class Runner:
             )
             if cached_parquet.exists():
                 try:
-                    from subbench.tasks.dataset import load_rows
+                    from subbench.tasks.dataset import fetch, load_rows
 
-                    rows = load_rows(cached_parquet)
+                    rows = load_rows(fetch(self.suite.dataset_revision))
                 except Exception as e:
                     logger.warning("Failed to load cached parquet %s: %s", cached_parquet, e)
             if not rows:
@@ -768,7 +770,7 @@ class Runner:
                 conn.commit()
 
                 attempt_dir = (
-                    Path("artifacts") / "cycles" / f"cycle-{c_id}" / f"attempt-{attempt_id}"
+                    self.artifacts_dir / "cycles" / f"cycle-{c_id}" / f"attempt-{attempt_id}"
                 )
                 attempt_dir.mkdir(parents=True, exist_ok=True)
                 (attempt_dir / "prompt.txt").write_text(prompt_rendered.text)

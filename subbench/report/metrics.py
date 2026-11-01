@@ -568,10 +568,10 @@ def compute_cycle_metrics(
             """
             SELECT c.id FROM cycles c
             JOIN experiments e ON c.experiment_id = e.id
-            WHERE c.id < ? AND c.status = 'completed' AND e.suite_digest = ?
+            WHERE c.id < ? AND c.status = 'completed' AND e.name = ? AND e.suite_digest = ?
             ORDER BY c.id DESC LIMIT 1
             """,
-            (cycle_id, suite_digest),
+            (cycle_id, exp_name, suite_digest),
         )
         row = cur.fetchone()
         if row:

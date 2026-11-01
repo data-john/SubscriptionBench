@@ -553,3 +553,40 @@ def test_report_longitudinal_deltas_and_cli(tmp_path: Path):
     summary_text = (out_dir / "summary.md").read_text(encoding="utf-8")
     assert "Longitudinal Comparison" in summary_text
     assert "Environment Drift" in summary_text
+
+
+def test_report_auto_compare_ignores_different_experiment_name(tmp_path: Path):
+    """Ensure baseline cycle does not auto-compare against a prior pilot-flash cycle."""
+    db_path = tmp_path / "test.db"
+    suite_path = tmp_path / "suite.json"
+    _, _ = _build_test_cycle_db(db_path, suite_path)  # Cycle 1: experiment 'test-reporting'
+
+    conn = connect(db_path)
+    suite = SuiteManifest.model_validate(json.loads(suite_path.read_text()))
+    cfg_eff = ConfigSpec(
+        label="efficient-flash",
+        role=ConfigRole.EFFICIENT,
+        model_id="gemini-3.8-flash",
+        buckets=["gemini-5h", "gemini-weekly"],
+    )
+    manifest2 = ExperimentManifest(
+        name="baseline-distinct",
+        suite=str(suite_path),
+        agy_path="/usr/local/bin/agy",
+        configs=[cfg_eff],
+        passes=1,
+        quota={
+            "primary_bucket_by_config": {"efficient-flash": "gemini-5h"},
+            "weekly_bucket_by_config": {"efficient-flash": "gemini-weekly"},
+            "idle_check_seconds": 0,
+        },
+    )
+    exp2_id = record_experiment(conn, manifest2, suite)
+    c2_id = conn.execute(
+        "INSERT INTO cycles (experiment_id, started_at, status) VALUES (?, 'now', 'completed')",
+        (exp2_id,),
+    ).lastrowid
+    conn.commit()
+
+    report = compute_cycle_metrics(conn, c2_id, compare_cycle_id=None)
+    assert report.longitudinal_deltas is None
