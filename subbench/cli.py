@@ -122,6 +122,34 @@ def audit_cmd(
     )
 
 
+@app.command("report")
+def report_cmd(
+    cycle_id: Annotated[int, typer.Option(help="Cycle ID to report on.")],
+    compare_cycle_id: Annotated[
+        int | None, typer.Option(help="Prior cycle ID to compare against.")
+    ] = None,
+    out_dir: Annotated[Path | None, typer.Option(help="Output directory for reports.")] = None,
+    db: Annotated[Path, typer.Option(help="SQLite database path.")] = DEFAULT_DB,
+) -> None:
+    """Generate Markdown summaries, tabular exports (CSV/Parquet), and SVG charts."""
+    from .report import generate_report
+    from .store import connect, init_db
+
+    conn = connect(db)
+    init_db(conn)
+
+    target_dir = out_dir or (Path("artifacts") / "reports" / f"cycle-{cycle_id}")
+    outputs = generate_report(
+        conn,
+        cycle_id=cycle_id,
+        out_dir=target_dir,
+        compare_cycle_id=compare_cycle_id,
+    )
+    typer.echo(f"Report generated for cycle {cycle_id} in {target_dir}:")
+    for k, p in outputs.items():
+        typer.echo(f"  {k}: {p}")
+
+
 @suite_app.command("build")
 def suite_build(
     revision: Annotated[str, typer.Option(help="Exact HF dataset commit sha (40 chars).")],
