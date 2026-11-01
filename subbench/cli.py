@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 from typing import Annotated
 
@@ -17,6 +18,9 @@ from .tasks.curate import build_suite
 app = typer.Typer(no_args_is_help=True, help="SubscriptionBench CLI.")
 suite_app = typer.Typer(no_args_is_help=True, help="Suite curation and validation.")
 app.add_typer(suite_app, name="suite")
+
+quota_app = typer.Typer(no_args_is_help=True, help="Quota probes and snapshots.")
+app.add_typer(quota_app, name="quota")
 
 DEFAULT_DB = Path("data/subbench.sqlite")
 
@@ -113,6 +117,67 @@ def suite_validate(
             f"{'PASS' if r.passed else 'FAIL'} {i} gold={r.gold} noop={r.noop} {r.error or ''}"
         )
     raise typer.Exit(1 if bad else 0)
+
+
+@quota_app.command("snapshot")
+def quota_snapshot_cmd(
+    manual_file: Annotated[
+        Path | None, typer.Option(help="Path to operator-supplied JSON snapshot.")
+    ] = None,
+    db: Annotated[
+        Path | None, typer.Option(help="SQLite database path to persist snapshot.")
+    ] = None,
+    cycle_id: Annotated[
+        int | None, typer.Option(help="Cycle ID if persisting to database.")
+    ] = None,
+) -> None:
+    """Capture a quota snapshot from agy /usage or a manual JSON file."""
+    from .quota import AgyUsageProbe, ManualQuotaProbe, QuotaProbe, save_quota_snapshot
+
+    probe: QuotaProbe
+    if manual_file:
+        probe = ManualQuotaProbe(manual_file)
+    else:
+        probe = AgyUsageProbe()
+    snap = probe.snapshot()
+    typer.echo(f"Quota snapshot taken at {snap.taken_at} (provenance: {snap.provenance}):")
+    for b_id, b in sorted(snap.buckets.items()):
+        rem_pct = b.remaining_fraction * 100
+        typer.echo(f"  {b_id:<25} {b.window:<8} {rem_pct:6.2f}% (reset: {b.reset_time or 'none'})")
+    if db:
+        from datetime import datetime
+
+        conn = connect(db)
+        init_db(conn)
+        if cycle_id is not None:
+            c_id = cycle_id
+        else:
+            row = conn.execute("SELECT id FROM cycles ORDER BY id DESC LIMIT 1").fetchone()
+            if row:
+                c_id = row[0]
+            else:
+                now = datetime.now(UTC).isoformat()
+                cur = conn.execute(
+                    """
+                    INSERT INTO experiments (
+                        name, manifest_json, manifest_digest,
+                        suite_version, suite_digest, created_at
+                    ) VALUES ('manual', '{}', 'manual', 'none', 'none', ?)
+                    """,
+                    (now,),
+                )
+                c_cur = conn.execute(
+                    """
+                    INSERT INTO cycles (experiment_id, started_at, status)
+                    VALUES (?, ?, 'running')
+                    """,
+                    (cur.lastrowid, now),
+                )
+                c_id = c_cur.lastrowid
+                conn.commit()
+
+        save_quota_snapshot(conn, cycle_id=c_id, attempt_id=None, phase="manual", snap=snap)
+        typer.echo(f"Saved snapshot to {db} (cycle_id={c_id})")
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ from subbench.provision.network import (
     launch_task_container,
 )
 from subbench.provision.workspace import prepare_workspace
+from subbench.quota import AgyUsageProbe
 from subbench.tasks.validate import find_report, run_harness
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -40,30 +41,10 @@ logger = logging.getLogger("calibrate")
 
 def get_usage_snapshot() -> dict[str, Any]:
     """Capture raw /usage JSON snapshot from container with persistent silent auth."""
-    cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "-v",
-        "subbench-agy-auth:/agy-state",
-        "-v",
-        "/home/john/.local/bin/agy:/usr/local/bin/agy:ro",
-        "subbench-agy-test",
-        "agy",
-        "-p",
-        "/usage",
-        "--output-format",
-        "json",
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if res.returncode != 0:
-        raise RuntimeError(f"Failed to get /usage snapshot:\n{res.stderr}")
-    data = json.loads(res.stdout)
-    buckets: dict[str, float] = {}
-    for grp in data.get("command", {}).get("data", {}).get("groups", []):
-        for b in grp.get("buckets", []):
-            buckets[b["id"]] = float(b["remaining_fraction"])
-    return {"raw": data, "buckets": buckets, "ts": time.time()}
+    probe = AgyUsageProbe()
+    snap = probe.snapshot()
+    buckets = {b_id: b.remaining_fraction for b_id, b in snap.buckets.items()}
+    return {"raw": json.loads(snap.raw_json), "buckets": buckets, "ts": time.time()}
 
 
 def load_task_data(instance_id: str) -> dict[str, Any]:

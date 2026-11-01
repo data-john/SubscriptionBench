@@ -77,3 +77,32 @@ def build_overlay_image(
             f"Failed to build overlay image {tag}:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}"
         )
     return tag
+
+
+def ensure_probe_image(
+    image_tag: str = "subbench-agy:probe",
+    sample_instance_id: str = "pytest-dev__pytest-5809",
+) -> str:
+    """Ensure a thin probe image exists locally without pulling new base layers."""
+    if image_exists(image_tag):
+        return image_tag
+    base = get_base_image_for_instance(sample_instance_id)
+    df = REPO_ROOT / "docker" / "Dockerfile.agy-overlay"
+    logger.info("Building probe overlay %s on base %s", image_tag, base)
+    cmd = [
+        "docker",
+        "build",
+        "-t",
+        image_tag,
+        "--build-arg",
+        f"BASE_IMAGE={base}",
+        "-f",
+        str(df),
+        str(REPO_ROOT),
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"Failed to build probe image {image_tag}:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}"
+        )
+    return image_tag
