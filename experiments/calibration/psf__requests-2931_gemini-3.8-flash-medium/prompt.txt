@@ -1,0 +1,25 @@
+You are tasked with resolving an issue in the repository psf/requests.
+The workspace is located at /testbed.
+The project environment and its dependencies (Python, test runner, etc.)
+are already installed and active on PATH. You can run tests directly
+(e.g. `pytest`, `python -m unittest`, etc.).
+
+An issue has been reported with the following problem statement:
+
+Request with binary payload fails due to calling to_native_string
+Introduced with https://github.com/kennethreitz/requests/issues/2844
+
+```
+import requests
+requests.put("http://httpbin.org/put", data=u"ööö".encode("utf-8"))
+```
+
+This works with 2.8.1, but not with 2.9.
+
+Instructions:
+1. Investigate the codebase and reproduce the issue.
+2. Implement the minimal fix required to resolve the issue.
+3. Run existing and new tests to verify your fix and ensure no regressions.
+4. Work autonomously without asking questions or pausing for confirmation.
+5. Leave your changes cleanly in /testbed. Do NOT push commits, modify remotes,
+   or search the web for upstream pull requests or discussions.

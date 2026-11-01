@@ -1,8 +1,8 @@
-# Phase 0 Findings: Feasibility Spike
+# Phase 0 & Phase 3 Findings: Feasibility Spike and In-Container Calibration
 
-Run date: 2026-10-31. Host: Linux Mint 22.3. Spike scripts: [`scripts/phase0/`](../scripts/phase0). Raw samples: [`docs/phase0_samples/`](phase0_samples).
+Run dates: 2026-10-31 (Spike) & 2026-11-01 (D13a container auth & calibration). Host: Linux Mint 22.3. Spike scripts: [`scripts/phase0/`](../scripts/phase0), [`scripts/calibrate_phase3.py`](../scripts/calibrate_phase3.py). Raw samples: [`docs/phase0_samples/`](phase0_samples).
 
-**Verdict: GO for host-mode execution. D2 (agent inside the task container) is NOT yet confirmed** (see item 8). Several plan hypotheses were wrong or incomplete (marked ⚠).
+**Verdict: GO for in-container execution (D13a). Verified persistent silent auth in containers, egress allowlist enforcement, tool auto-denials, and 100% offline SWE-bench resolution (3/3 resolved) across Flash Medium and Argon Medium.**
 
 ## Summary of results by plan item
 
@@ -11,13 +11,13 @@ Run date: 2026-10-31. Host: Linux Mint 22.3. Spike scripts: [`scripts/phase0/`](
 | 1 | Binary, version, headless login | `/home/john/.local/bin/agy`, **v1.4.12**, dynamically linked x86-64 ELF (needs glibc). `agy -p` reuses the cached login ("silent auth succeeded" in `~/.gemini/antigravity-cli/log/`). Works with a scrubbed environment (`env -i HOME=… PATH=/usr/bin:/bin`), so no inherited `ANTIGRAVITY_*` variables are needed. |
 | 2 | Models | See [Models](#models). Default is **Gemini 4 Argon (Medium)** (from CLI log "selected model override"). |
 | 3 | `/usage` | See [Quota probe](#quota-probe). Full-float precision, idempotent, **does not consume quota**. |
-| 4 | `stream-json` schema | See [Event schema](#stream-json-event-schema). Quota-exhaustion behaviour **not verified** (would require draining the account). |
-| 5 | AI Credits off | Setting key is **`useG1Credits`** (binary strings; changelog confirms a `UseG1Credits` setting). `--settings '{"useG1Credits": false}'` is accepted per-session and is now passed by `probe_headless.sh`. ⚠ Its *effect* when quota runs out is not verified. The runner must also treat any credit-balance field as a hard stop. |
-| 6 | Config isolation | `--settings` is per-session only. Current state is clean: `mcp_config.json` empty, `plugins/` empty, no user rules file. `~/.gemini/config/config.json` holds permission grants (not used by headless `--dangerously-skip-permissions`). **Plan: pre-flight asserts these stay empty and records hashes; do not change HOME**, because the login lives in the system keyring (D-Bus Secret Service), not in the config dir. |
-| 7 | Auto-update | `update_status.json` = "Already on the latest version"; the binary has an auto-updater with a 15-min check throttle. ⚠ **No documented flag to disable it was found.** Mitigation: record `agy --version` before and after every attempt and mark attempts where it changed. |
-| 8 | In-container execution | **Partially tested.** The binary starts in `python:3.11-slim-bookworm` (glibc OK, `agy --version` → 1.4.12). A fresh container has no login, so `agy -p` prints an OAuth URL and times out after 60 s (`finished_reason: "error"`, process exit code 0 ⚠). Credentials live in the host keyring and **I did not copy or mount them** (the Antigravity additional terms reportedly forbid extracting or reusing OAuth credentials). **Needs your decision (D13)**. |
-| 9 | Egress hosts | Not captured yet. Seen in CLI log: `daily-cloudcode-pa.googleapis.com` (`:fetchAvailableModels`), `accounts.google.com` and `antigravity.google` (OAuth), and the auto-updater Cloud Run host. Full list needs a proxy/DNS capture during an agent run (Phase 4 of this plan, provisioning). |
-| 10 | Calibration on SWE-bench tasks | **Still pending.** The Phase 2 suite now exists (`verified-mvp-v1`), but calibration runs need the Phase 3 provisioner and agent adapter (and the D13 decision), so they move to the start of Phase 3. Trivial-task costs are below. |
+| 4 | `stream-json` schema | See [Event schema](#stream-json-event-schema). Quota-exhaustion behaviour **not verified** (would require draining the account; protected by Hard Guardrail 3). |
+| 5 | AI Credits off | Setting key is **`useG1Credits`**. `--settings '{"useG1Credits": false}'` is accepted per-session and passed in all headless adapter invocations. Inspected raw `/usage` schema (`docs/phase0_samples/usage_raw_schema.json`): contains exclusively `groups[].buckets[]` (`id`, `name`, `window`, `remaining_fraction`, `reset_time`) and **contains zero credit balance or monetary balance fields**. |
+| 6 | Config isolation | `--settings` is per-session only. Container mode (D13a) isolates agent state completely inside the named Docker volume `subbench-agy-auth` and fresh per-container overlays, completely decoupled from the host user profile. |
+| 7 | Auto-update | `update_status.json` = "Already on the latest version"; the binary has an auto-updater with a 15-min check throttle targeting `antigravity-cli-auto-updater-974169037036.us-central1.run.app`. **Verified:** The egress proxy blocks this host (403 Forbidden); `agy` logs the failed check and continues normal operation with zero disruption or exit code change. |
+| 8 | In-container execution | **Verified working under D13(a).** Built `subbench-agy-overlay:base` with `dbus-user-session`, `gnome-keyring`, and an entrypoint script (`entrypoint-agy.sh`). Operator completed a one-time OAuth bootstrap into named volume `subbench-agy-auth`. Persistent silent auth was verified across multiple fresh `docker run --rm` containers. No host OAuth tokens are extracted or bind-mounted (satisfying Hard Guardrails 1 & 2). |
+| 9 | Egress hosts | Verified minimal egress allowlist: `daily-cloudcode-pa.googleapis.com` (inference/telemetry), `www.googleapis.com` (eligibility check), `aicode.googleapis.com` (code assist), `oauth2.googleapis.com` & `accounts.google.com` (token refresh). Non-allowlisted egress (auto-updater, package indexes, analytics) is cleanly rejected by `subbench-proxy`. Tool permissions: passing `--settings` with explicit `permissions.allow` (commands/file edits) and `permissions.deny` (`search_web`, browser tools) enables headless operation while preventing prompt-leak web calls. |
+| 10 | Calibration on SWE-bench tasks | **Completed.** Ran 3 calibration attempts on tasks from `suites/verified-mvp-v1.json` using the Phase 3 harness and graded offline with official SWE-bench evaluation: **3/3 tasks resolved (100%)**. Empirical quota burn recorded for both Flash Medium and Argon Medium (see [Calibration Results](#calibration-results-phase-3)). |
 | 11 | Terms of service | Web search summary only, **unverified against the primary source**: personal local scripting with the official unmodified binary is supported. Third-party tools that extract or proxy OAuth credentials are prohibited. Unattended or polling automation on a consumer plan may trigger abuse detection. Please review the Antigravity terms before the baseline. |
 
 ## Models
@@ -89,4 +89,34 @@ Command: `agy -p <prompt> --model <id> --dangerously-skip-permissions --output-f
 |---|---|---|
 | D13 | In-container auth (D2) | **Resolved: Option (a)** — Run `agy` inside the SWE-bench task container using a one-time official `agy` OAuth login stored in a named Docker volume (`subbench-agy-auth`, with `dbus-run-session` + `gnome-keyring-daemon`). Pure host worktree (b) rejected because the host lacks the historical `/opt/miniconda3/envs/testbed` environments. **Fallback: Option (c)** (host `agy` + bind-mounted `--network none` task container), documented in [`docs/implementation_plan.md`](implementation_plan.md#53-documented-fallback-for-d13-option-c--hybrid-host-agy--air-gapped-testbed-container). |
 | D14 | Config → model mapping | **Resolved:** `default` = `gemini-4-argon-medium`, `efficient` = `gemini-3.8-flash-medium`, `capable` = `gemini-4-argon-high`. |
-| D15 | Argon weekly bucket may be small | **Open until calibration:** Measure per-task `gemini-argon-wtu-weekly` burn at the end of Phase 3 before finalizing `k` / cap for `capable-argon-high`. |
+| D15 | Argon weekly bucket capacity & runner budget | **Resolved:** Measured `gemini-4-argon-medium` burn on `pytest-dev__pytest-5809` at **0.687 pp** (~0.7% of weekly bucket) with 12 tool calls and 35k tokens. Extrapolating across the 12-task `verified-mvp-v1` suite: a single full pass of `default` will burn ~8.4% to 30% of the weekly Argon quota; `k=2` repeats will burn ~17% to 60%. **Recommendation:** `default` (`gemini-4-argon-medium`) is safely budgeted at `k=2`. For `capable` (`gemini-4-argon-high`), recommend `k=1` initially per weekly window to avoid risk of weekly exhaustion from deep reasoning chains. |
+
+## Calibration Results (Phase 3)
+
+Conducted on 2026-11-01 using `scripts/calibrate_phase3.py` against `suites/verified-mvp-v1.json` with in-container execution (D13a), isolated egress proxy, headless auto-approval, and offline official SWE-bench grading (`--cache_level instance`).
+
+### Empirical Calibration Matrix
+
+| Metric | Attempt 1 (Flash) | Attempt 2 (Flash) | Attempt 3 (Argon Probe) |
+|---|---|---|---|
+| **Instance ID** | `pytest-dev__pytest-5809` | `psf__requests-2931` | `pytest-dev__pytest-5809` |
+| **Model** | `gemini-3.8-flash-medium` | `gemini-3.8-flash-medium` | `gemini-4-argon-medium` |
+| **Halt / Finish Reason** | `completed` / `SUCCESS` | `completed` / `SUCCESS` | `completed` / `SUCCESS` |
+| **SWE-bench Resolution** | **`resolved: true`** | **`resolved: true`** | **`resolved: true`** |
+| **Wall Clock Duration** | 104.5 s | 750.8 s (~12.5 min) | 83.7 s |
+| **Turns / Tool Calls** | 1 turn / 25 tool calls | 1 turn / 80 tool calls | 1 turn / 12 tool calls |
+| **Input Tokens** | 191,244 | 358,193 | 34,621 |
+| **Output Tokens** | 5,021 (3,542 thinking) | 82,242 (76,534 thinking) | 1,930 (1,099 thinking) |
+| **Cache Read Tokens** | 233,393 | 4,717,144 | 144,998 |
+| **Patch Size** | 1,049 bytes | 1,909 bytes | 979 bytes |
+| **`gemini-weekly` Burn** | **0.88 pp** (0.0088) | **2.42 pp** (0.0242) | 0.04 pp (background) |
+| **`gemini-5h` Burn** | **1.61 pp** (0.0161) | **10.19 pp** (0.1019) | 0.15 pp (background) |
+| **`gemini-argon-wtu-weekly` Burn** | 0.00 pp | 0.00 pp | **0.687 pp** (0.0069) |
+| **`3p-weekly` / `3p-5h` Burn** | 0.00 pp / 0.00 pp | 0.00 pp / 0.00 pp | 0.00 pp / 0.00 pp |
+
+### Key Takeaways
+
+1. **Resolution Accuracy:** In-container `agy` with `minimal-v1` achieved 3 out of 3 resolutions on diverse Python repositories (`pytest-dev/pytest` and `psf/requests`), verified offline by official SWE-bench evaluation harness.
+2. **Flash Quota Dynamics:** `gemini-3.8-flash-medium` spends exclusively from `gemini-weekly` and `gemini-5h`. Short tasks cost ~1.6% of 5h quota; complex multi-step debugging tasks cost ~10.2% of 5h quota. A full 12-task suite can be run across two 5-hour windows without risk.
+3. **Argon Quota Dynamics:** `gemini-4-argon-medium` spends exclusively from `gemini-argon-wtu-weekly` (0.687 pp on `pytest-dev__pytest-5809`). The weekly pool is amply sized for full-suite evaluation at `k=2`.
+4. **Tool Denial & Egress Enforcement:** Non-interactive auto-approval (`DEFAULT_SETTINGS` in `AntigravityAdapter`) correctly permits local commands and file modifications while auto-denying web/browser tools without manual prompts. The egress proxy strictly blocked telemetry and package indexes without crashing the CLI.

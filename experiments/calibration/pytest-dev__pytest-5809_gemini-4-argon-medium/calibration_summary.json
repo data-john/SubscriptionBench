@@ -1,0 +1,70 @@
+{
+  "instance_id": "pytest-dev__pytest-5809",
+  "model_id": "gemini-4-argon-medium",
+  "resolved": true,
+  "patch_bytes": 979,
+  "halt_reason": "completed",
+  "finished_reason": "SUCCESS",
+  "wall_seconds": 83.74877869201009,
+  "num_turns": 1,
+  "input_tokens": 34621,
+  "output_tokens": 1930,
+  "thinking_tokens": 1099,
+  "cache_read_tokens": 144998,
+  "tool_calls": 12,
+  "bucket_deltas": {
+    "gemini-weekly": {
+      "pre": 0.8912156820297241,
+      "post": 0.8907838463783264,
+      "burned_fraction": 0.0004318356513977051,
+      "burned_percentage_points": 0.04318356513977051
+    },
+    "gemini-5h": {
+      "pre": 0.8257184028625488,
+      "post": 0.8242068290710449,
+      "burned_fraction": 0.0015115737915039062,
+      "burned_percentage_points": 0.15115737915039062
+    },
+    "3p-weekly": {
+      "pre": 0.1257600039243698,
+      "post": 0.1257600039243698,
+      "burned_fraction": 0.0,
+      "burned_percentage_points": 0.0
+    },
+    "3p-5h": {
+      "pre": 1.0,
+      "post": 1.0,
+      "burned_fraction": 0.0,
+      "burned_percentage_points": 0.0
+    },
+    "gemini-argon-wtu-weekly": {
+      "pre": 0.9199479818344116,
+      "post": 0.9130792021751404,
+      "burned_fraction": 0.00686877965927124,
+      "burned_percentage_points": 0.686877965927124
+    }
+  },
+  "report": {
+    "total_instances": 1,
+    "submitted_instances": 1,
+    "completed_instances": 1,
+    "resolved_instances": 1,
+    "unresolved_instances": 0,
+    "empty_patch_instances": 0,
+    "error_instances": 0,
+    "completed_ids": [
+      "pytest-dev__pytest-5809"
+    ],
+    "incomplete_ids": [],
+    "empty_patch_ids": [],
+    "submitted_ids": [
+      "pytest-dev__pytest-5809"
+    ],
+    "resolved_ids": [
+      "pytest-dev__pytest-5809"
+    ],
+    "unresolved_ids": [],
+    "error_ids": [],
+    "schema_version": 2
+  }
+}

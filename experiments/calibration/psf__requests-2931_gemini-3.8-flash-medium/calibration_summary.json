@@ -1,0 +1,70 @@
+{
+  "instance_id": "psf__requests-2931",
+  "model_id": "gemini-3.8-flash-medium",
+  "resolved": true,
+  "patch_bytes": 1909,
+  "halt_reason": "completed",
+  "finished_reason": "SUCCESS",
+  "wall_seconds": 750.7995033249899,
+  "num_turns": 1,
+  "input_tokens": 358193,
+  "output_tokens": 82242,
+  "thinking_tokens": 76534,
+  "cache_read_tokens": 4717144,
+  "tool_calls": 80,
+  "bucket_deltas": {
+    "gemini-weekly": {
+      "pre": 0.9154390692710876,
+      "post": 0.8912156820297241,
+      "burned_fraction": 0.024223387241363525,
+      "burned_percentage_points": 2.4223387241363525
+    },
+    "gemini-5h": {
+      "pre": 0.9275867938995361,
+      "post": 0.8257184028625488,
+      "burned_fraction": 0.1018683910369873,
+      "burned_percentage_points": 10.18683910369873
+    },
+    "3p-weekly": {
+      "pre": 0.1257600039243698,
+      "post": 0.1257600039243698,
+      "burned_fraction": 0.0,
+      "burned_percentage_points": 0.0
+    },
+    "3p-5h": {
+      "pre": 1.0,
+      "post": 1.0,
+      "burned_fraction": 0.0,
+      "burned_percentage_points": 0.0
+    },
+    "gemini-argon-wtu-weekly": {
+      "pre": 0.9199479818344116,
+      "post": 0.9199479818344116,
+      "burned_fraction": 0.0,
+      "burned_percentage_points": 0.0
+    }
+  },
+  "report": {
+    "total_instances": 1,
+    "submitted_instances": 1,
+    "completed_instances": 1,
+    "resolved_instances": 1,
+    "unresolved_instances": 0,
+    "empty_patch_instances": 0,
+    "error_instances": 0,
+    "completed_ids": [
+      "psf__requests-2931"
+    ],
+    "incomplete_ids": [],
+    "empty_patch_ids": [],
+    "submitted_ids": [
+      "psf__requests-2931"
+    ],
+    "resolved_ids": [
+      "psf__requests-2931"
+    ],
+    "unresolved_ids": [],
+    "error_ids": [],
+    "schema_version": 2
+  }
+}

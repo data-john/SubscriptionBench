@@ -34,6 +34,26 @@ INFRA_INDICATORS = (
     "dbus",
 )
 
+DEFAULT_SETTINGS: dict[str, Any] = {
+    "useG1Credits": False,
+    "permissions": {
+        "allow": [
+            "command(*)",
+            "write_file(*)",
+            "read_file(*)",
+            "edit_file(*)",
+            "view_file(*)",
+        ],
+        "deny": [
+            "search_web(*)",
+            "search_web",
+            "read_url(*)",
+            "read_url",
+            "browser_*",
+        ],
+    },
+}
+
 
 def parse_stream_json(lines: Iterable[str]) -> StreamSummary:
     """Parse NDJSON lines from agy --output-format stream-json.
@@ -116,11 +136,18 @@ class AntigravityAdapter:
         self.model_id = model_id
         self.effort = effort
         self.agy_bin = agy_bin
-        self.settings = settings or {"useG1Credits": False}
+        self.settings = settings if settings is not None else DEFAULT_SETTINGS
         self.extra_flags = extra_flags or []
 
     def get_version(self, container_id: str) -> str | None:
-        cmd = ["docker", "exec", container_id, self.agy_bin, "--version"]
+        cmd = [
+            "docker",
+            "exec",
+            container_id,
+            "/usr/local/bin/entrypoint-agy.sh",
+            self.agy_bin,
+            "--version",
+        ]
         try:
             res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=10)
             return res.stdout.strip() if res.returncode == 0 else None
@@ -167,6 +194,7 @@ class AntigravityAdapter:
             "-w",
             "/testbed",
             container_id,
+            "/usr/local/bin/entrypoint-agy.sh",
             *inner_cmd,
         ]
 
