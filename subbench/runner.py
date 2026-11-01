@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import platform
 import shutil
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from subbench.agents.antigravity import AntigravityAdapter
 from subbench.agents.base import AgentAdapter, AttemptOutcome
-from subbench.agents.prompts import render_prompt
+from subbench.agents.prompts import TEMPLATES, render_prompt
 from subbench.config import (
     ConfigSpec,
     ExperimentManifest,
@@ -38,6 +39,7 @@ from subbench.provision.network import (
 from subbench.provision.workspace import prepare_workspace
 from subbench.quota import (
     AgyUsageProbe,
+    BucketReading,
     QuotaProbe,
     QuotaSnapshot,
     check_idle,
@@ -236,14 +238,62 @@ def record_environment(
     experiment_id: int,
     manifest: ExperimentManifest,
     suite: SuiteManifest,
-    agy_version: str = "v1.4.12",
+    agy_version: str | None = None,
     docker_version: str | None = None,
-    swebench_version: str | None = "4.1.0",
+    swebench_version: str | None = None,
 ) -> None:
     now_iso = datetime.now(UTC).isoformat()
     cur = conn.execute("SELECT id FROM environment WHERE experiment_id = ?", (experiment_id,))
     if cur.fetchone():
         return
+
+    real_agy = agy_version
+    if real_agy is None:
+        if Path(manifest.agy_path).is_file():
+            try:
+                import subprocess
+
+                res = subprocess.run(
+                    [manifest.agy_path, "--version"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    real_agy = res.stdout.strip()
+            except Exception:
+                pass
+        real_agy = real_agy or "v1.4.12"
+
+    real_docker = docker_version
+    if real_docker is None:
+        try:
+            import subprocess
+
+            res = subprocess.run(
+                ["docker", "--version"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                real_docker = res.stdout.strip()
+        except Exception:
+            pass
+        real_docker = real_docker or "Docker"
+
+    real_swebench = swebench_version
+    if real_swebench is None:
+        try:
+            import importlib.metadata
+
+            real_swebench = importlib.metadata.version("swebench")
+        except Exception:
+            real_swebench = "unknown"
+
+    tmpl_text = TEMPLATES.get(manifest.prompt_template, manifest.prompt_template)
+    prompt_hash = hashlib.sha256(tmpl_text.encode("utf-8")).hexdigest()
+
     conn.execute(
         """
         INSERT INTO environment (
@@ -255,14 +305,14 @@ def record_environment(
         (
             experiment_id,
             manifest.agy_path,
-            agy_version,
+            real_agy,
             platform.system(),
             platform.release(),
-            docker_version or "Docker",
-            swebench_version or "4.1.0",
+            real_docker,
+            real_swebench,
             suite.dataset,
             suite.dataset_revision,
-            manifest.prompt_template,
+            prompt_hash,
             manifest.digest()[:16],
             now_iso,
         ),
@@ -337,6 +387,33 @@ def get_or_create_cycle(
     return cur.lastrowid
 
 
+def get_cumulative_weekly_burn(
+    conn: sqlite3.Connection,
+    cycle_id: int,
+    config_id: int,
+    weekly_bucket: str,
+) -> float:
+    """Calculate cumulative valid=1 quota consumed on a weekly bucket for a config in a cycle."""
+    cur = conn.execute(
+        """
+        SELECT q_pre.remaining_fraction, q_post.remaining_fraction
+        FROM attempts a
+        JOIN quota_snapshots q_pre
+            ON a.id = q_pre.attempt_id AND q_pre.phase = 'pre' AND q_pre.bucket_id = ?
+        JOIN quota_snapshots q_post
+            ON a.id = q_post.attempt_id AND q_post.phase = 'post' AND q_post.bucket_id = ?
+        WHERE a.cycle_id = ? AND a.config_id = ? AND a.valid = 1
+        """,
+        (weekly_bucket, weekly_bucket, cycle_id, config_id),
+    )
+    total_burn = 0.0
+    for pre_rem, post_rem in cur.fetchall():
+        diff = pre_rem - post_rem
+        if diff > 0:
+            total_burn += diff
+    return total_burn
+
+
 class Runner:
     """Resumable sequential runner executing an ExperimentManifest over a SuiteManifest."""
 
@@ -351,6 +428,7 @@ class Runner:
         now_fn: Callable[[], datetime] = lambda: datetime.now(UTC),
         skip_idle_check: bool = False,
         min_free_gb: float = 15.0,
+        problem_statements: Mapping[str, str] | None = None,
     ) -> None:
         self.manifest_path = manifest_path
         self.db_path = db_path
@@ -369,6 +447,7 @@ class Runner:
         self.now_fn = now_fn
         self.skip_idle_check = skip_idle_check
         self.min_free_gb = min_free_gb
+        self.problem_statements = problem_statements
 
     def run_preflight(self, conn: sqlite3.Connection) -> None:
         """Verify pre-flight constraints before starting task execution."""
@@ -382,6 +461,24 @@ class Runner:
                 f"Insufficient disk space: {disk_free_gb:.1f} GB free, "
                 f"minimum required: {self.min_free_gb:.1f} GB"
             )
+
+        # Docker and image pre-flight checks when using real Docker provisioner
+        if isinstance(self.provisioner, DockerProvisioner):
+            if not Path(self.manifest.agy_path).is_file():
+                raise RuntimeError(f"Host agy binary not found at {self.manifest.agy_path}!")
+            import subprocess
+
+            res = subprocess.run(["docker", "info"], capture_output=True, text=True, check=False)
+            if res.returncode != 0:
+                raise RuntimeError(f"Docker daemon not accessible: {res.stderr}")
+
+            from subbench.provision.images import verify_base_image_exists
+
+            for t in self.suite.ordered():
+                if self.manifest.task_limit is not None and t.order >= self.manifest.task_limit:
+                    continue
+                if not verify_base_image_exists(t.instance_id):
+                    raise RuntimeError(f"Docker base image missing for instance {t.instance_id}!")
 
         # Idle check across all watched buckets
         all_buckets = {b for cfg in self.manifest.configs for b in cfg.buckets}
@@ -421,6 +518,57 @@ class Runner:
         init_db(conn)
 
         self.run_preflight(conn)
+
+        problem_map: dict[str, str] = {}
+        if self.problem_statements is not None:
+            problem_map = dict(self.problem_statements)
+        elif not dry_run:
+            rows: list[dict[str, Any]] = []
+            cached_parquet = (
+                Path("data/cache") / f"verified-{self.suite.dataset_revision[:12]}.parquet"
+            )
+            if cached_parquet.exists():
+                try:
+                    from subbench.tasks.dataset import load_rows
+
+                    rows = load_rows(cached_parquet)
+                except Exception as e:
+                    logger.warning("Failed to load cached parquet %s: %s", cached_parquet, e)
+            if not rows:
+                fallback_jsonl = Path("data/validation/dataset.jsonl")
+                if fallback_jsonl.exists():
+                    try:
+                        for line in fallback_jsonl.read_text(encoding="utf-8").splitlines():
+                            if line.strip():
+                                rows.append(json.loads(line))
+                    except Exception as e:
+                        logger.warning("Failed to load fallback jsonl %s: %s", fallback_jsonl, e)
+            if not rows:
+                try:
+                    from subbench.tasks.dataset import fetch, load_rows
+
+                    pq_path = fetch(self.suite.dataset_revision)
+                    rows = load_rows(pq_path)
+                except Exception as e:
+                    logger.warning(
+                        "Failed to fetch parquet for %s: %s", self.suite.dataset_revision, e
+                    )
+
+            for r in rows:
+                iid = r.get("instance_id")
+                ps = r.get("problem_statement")
+                if iid and ps:
+                    problem_map[iid] = ps
+
+            for _, _, _, task in schedule:
+                if (
+                    task.instance_id not in problem_map
+                    or not str(problem_map[task.instance_id]).strip()
+                ):
+                    raise RuntimeError(
+                        f"Missing or empty problem_statement for task '{task.instance_id}'! "
+                        "Cannot run without valid problem statement."
+                    )
 
         if cycle_id is not None:
             cur = conn.execute("SELECT experiment_id FROM cycles WHERE id = ?", (cycle_id,))
@@ -516,8 +664,23 @@ class Runner:
                         for lb in leaked_buckets:
                             add_cycle_flag(conn, c_id, f"external_use:{lb}")
 
-                # Check if bucket is exhausted before start
+                # Check weekly cap before start
                 weekly_bucket = self.manifest.quota.weekly_bucket_by_config.get(config.label)
+                max_weekly = self.manifest.quota.max_weekly_fraction_per_config_cycle
+                if weekly_bucket and max_weekly is not None:
+                    current_burn = get_cumulative_weekly_burn(conn, c_id, cfg_id, weekly_bucket)
+                    if current_burn >= max_weekly:
+                        logger.warning(
+                            "Config %s reached weekly fraction cap (burned=%.4f >= max=%.4f)",
+                            config.label,
+                            current_burn,
+                            max_weekly,
+                        )
+                        aborted_configs.add(config.label)
+                        add_cycle_flag(conn, c_id, f"weekly_cap_reached:{config.label}")
+                        break
+
+                # Check if weekly bucket is exhausted before start
                 if weekly_bucket and snap_pre.buckets.get(weekly_bucket):
                     rem_w = snap_pre.buckets[weekly_bucket].remaining_fraction
                     if rem_w <= 1e-3:
@@ -530,11 +693,50 @@ class Runner:
                         add_cycle_flag(conn, c_id, f"weekly_exhausted:{config.label}")
                         break
 
+                # Check pre-attempt 5h bucket exhaustion (<= 1e-3)
+                five_h_exhausted_bucket: BucketReading | None = None
+                for b_id in config.buckets:
+                    b_reading = snap_pre.buckets.get(b_id)
+                    if (
+                        b_reading
+                        and b_reading.window == "5h"
+                        and b_reading.remaining_fraction <= 1e-3
+                    ):
+                        five_h_exhausted_bucket = b_reading
+                        break
+
+                if five_h_exhausted_bucket is not None:
+                    w_used = windows_used.get(config.label, 1)
+                    if w_used < self.manifest.quota.max_5h_windows_per_config_cycle:
+                        windows_used[config.label] = w_used + 1
+                        reset_time = five_h_exhausted_bucket.reset_time
+                        sleep_duration = 30.0
+                        if reset_time:
+                            try:
+                                z_clean = reset_time.replace("Z", "+00:00")
+                                reset_dt = datetime.fromisoformat(z_clean)
+                                wait_s = (reset_dt - self.now_fn()).total_seconds()
+                                sleep_duration = max(0.0, wait_s) + 30.0
+                            except Exception:
+                                sleep_duration = 18030.0
+                        logger.info(
+                            "5h quota exhausted on %s. Sleeping %.1fs until reset...",
+                            five_h_exhausted_bucket.bucket_id,
+                            sleep_duration,
+                        )
+                        self.sleep_fn(sleep_duration)
+                        continue
+                    else:
+                        logger.warning("Max 5h windows reached for %s", config.label)
+                        add_cycle_flag(conn, c_id, f"max_5h_windows_reached:{config.label}")
+                        aborted_configs.add(config.label)
+                        break
+
                 prompt_rendered = render_prompt(
                     self.manifest.prompt_template,
                     instance_id=task.instance_id,
                     repo=task.repo,
-                    problem_statement="Problem placeholder",
+                    problem_statement=problem_map[task.instance_id],
                 )
 
                 # PENDING
@@ -575,118 +777,131 @@ class Runner:
                 task_env = self.provisioner.provision(
                     task.instance_id, task.base_commit, attempt_dir
                 )
-                conn.execute(
-                    "UPDATE attempts SET state = 'PROVISIONED' WHERE id = ?",
-                    (attempt_id,),
-                )
-                conn.commit()
-
-                # QUOTA_PRE
-                save_quota_snapshot(
-                    conn,
-                    cycle_id=c_id,
-                    attempt_id=attempt_id,
-                    phase="pre",
-                    snap=snap_pre,
-                )
-                conn.execute("UPDATE attempts SET state = 'QUOTA_PRE' WHERE id = ?", (attempt_id,))
-                conn.commit()
-
-                # RUNNING
-                conn.execute("UPDATE attempts SET state = 'RUNNING' WHERE id = ?", (attempt_id,))
-                conn.commit()
-
-                adapter = self.adapter_factory(config)
-                timeout_s = self.manifest.timeout_minutes * 60
-                raw_ndjson = attempt_dir / "stream_json.ndjson"
-
-                outcome: AttemptOutcome
                 try:
-                    outcome = adapter.run_attempt(
-                        instance_id=task.instance_id,
-                        prompt=prompt_rendered,
-                        container_id=task_env.container_id,
-                        timeout_seconds=timeout_s,
-                        raw_output_path=raw_ndjson,
+                    conn.execute(
+                        "UPDATE attempts SET state = 'PROVISIONED' WHERE id = ?",
+                        (attempt_id,),
                     )
-                except Exception as e:
-                    logger.exception("Adapter run failed: %s", e)
-                    outcome = AttemptOutcome(
-                        halt_reason="agent_error",
-                        exit_code=-1,
-                        finished_reason="ERROR",
-                        agy_version_pre=None,
-                        agy_version_post=None,
-                        wall_seconds=0.0,
-                        num_turns=0,
-                        input_tokens=0,
-                        output_tokens=0,
-                        thinking_tokens=0,
-                        cache_read_tokens=0,
-                        tool_calls=0,
-                        events=[],
-                        error_text=str(e),
-                    )
+                    conn.commit()
 
-                # HALTED
-                ended_str = self.now_fn().isoformat()
-                conn.execute(
-                    """
-                    UPDATE attempts
-                    SET state = 'HALTED', halt_reason = ?, exit_code = ?, finished_reason = ?,
-                        wall_seconds = ?, num_turns = ?, input_tokens = ?, output_tokens = ?,
-                        thinking_tokens = ?, cache_read_tokens = ?, tool_calls = ?,
-                        error_text = ?, agy_version = ?, ended_at = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        outcome.halt_reason,
-                        outcome.exit_code,
-                        outcome.finished_reason,
-                        outcome.wall_seconds,
-                        outcome.num_turns,
-                        outcome.input_tokens,
-                        outcome.output_tokens,
-                        outcome.thinking_tokens,
-                        outcome.cache_read_tokens,
-                        outcome.tool_calls,
-                        outcome.error_text,
-                        outcome.agy_version_post or outcome.agy_version_pre,
-                        ended_str,
-                        attempt_id,
-                    ),
-                )
-                for ev in outcome.events:
+                    # QUOTA_PRE
+                    save_quota_snapshot(
+                        conn,
+                        cycle_id=c_id,
+                        attempt_id=attempt_id,
+                        phase="pre",
+                        snap=snap_pre,
+                    )
+                    conn.execute(
+                        "UPDATE attempts SET state = 'QUOTA_PRE' WHERE id = ?",
+                        (attempt_id,),
+                    )
+                    conn.commit()
+
+                    # RUNNING
+                    conn.execute(
+                        "UPDATE attempts SET state = 'RUNNING' WHERE id = ?",
+                        (attempt_id,),
+                    )
+                    conn.commit()
+
+                    adapter = self.adapter_factory(config)
+                    timeout_s = self.manifest.timeout_minutes * 60
+                    raw_ndjson = attempt_dir / "stream_json.ndjson"
+                    stderr_file = attempt_dir / "stderr.txt"
+
+                    outcome: AttemptOutcome
+                    try:
+                        outcome = adapter.run_attempt(
+                            instance_id=task.instance_id,
+                            prompt=prompt_rendered,
+                            container_id=task_env.container_id,
+                            timeout_seconds=timeout_s,
+                            raw_output_path=raw_ndjson,
+                            stderr_output_path=stderr_file,
+                        )
+                    except Exception as e:
+                        logger.exception("Adapter run failed: %s", e)
+                        outcome = AttemptOutcome(
+                            halt_reason="agent_error",
+                            exit_code=-1,
+                            finished_reason="ERROR",
+                            agy_version_pre=None,
+                            agy_version_post=None,
+                            wall_seconds=0.0,
+                            num_turns=0,
+                            input_tokens=0,
+                            output_tokens=0,
+                            thinking_tokens=0,
+                            cache_read_tokens=0,
+                            tool_calls=0,
+                            events=[],
+                            error_text=str(e),
+                        )
+
+                    # Ensure stderr.txt exists on disk
+                    stderr_file.touch(exist_ok=True)
+
+                    # HALTED
+                    ended_str = self.now_fn().isoformat()
                     conn.execute(
                         """
-                        INSERT OR IGNORE INTO agent_events (
-                            attempt_id, idx, event, step_type, state, tool_name,
-                            duration_seconds, total_tokens
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        UPDATE attempts
+                        SET state = 'HALTED', halt_reason = ?, exit_code = ?, finished_reason = ?,
+                            wall_seconds = ?, num_turns = ?, input_tokens = ?, output_tokens = ?,
+                            thinking_tokens = ?, cache_read_tokens = ?, tool_calls = ?,
+                            error_text = ?, agy_version = ?, ended_at = ?
+                        WHERE id = ?
                         """,
                         (
+                            outcome.halt_reason,
+                            outcome.exit_code,
+                            outcome.finished_reason,
+                            outcome.wall_seconds,
+                            outcome.num_turns,
+                            outcome.input_tokens,
+                            outcome.output_tokens,
+                            outcome.thinking_tokens,
+                            outcome.cache_read_tokens,
+                            outcome.tool_calls,
+                            outcome.error_text,
+                            outcome.agy_version_post or outcome.agy_version_pre,
+                            ended_str,
                             attempt_id,
-                            ev.idx,
-                            ev.event,
-                            ev.step_type,
-                            ev.state,
-                            ev.tool_name,
-                            ev.duration_seconds,
-                            ev.total_tokens,
                         ),
                     )
-                conn.commit()
+                    for ev in outcome.events:
+                        conn.execute(
+                            """
+                            INSERT OR IGNORE INTO agent_events (
+                                attempt_id, idx, event, step_type, state, tool_name,
+                                duration_seconds, total_tokens
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                attempt_id,
+                                ev.idx,
+                                ev.event,
+                                ev.step_type,
+                                ev.state,
+                                ev.tool_name,
+                                ev.duration_seconds,
+                                ev.total_tokens,
+                            ),
+                        )
+                    conn.commit()
 
-                # CAPTURED
-                patch_text, patch_bytes = task_env.capture_patch()
-                patch_path = save_attempt_artifacts(
-                    attempt_dir,
-                    patch_text,
-                    log_files={
-                        "stream_json.ndjson": raw_ndjson,
-                    },
-                )
-                task_env.cleanup()
+                    # CAPTURED
+                    patch_text, patch_bytes = task_env.capture_patch()
+                    patch_path = save_attempt_artifacts(
+                        attempt_dir,
+                        patch_text,
+                        log_files={
+                            "stream_json.ndjson": raw_ndjson,
+                        },
+                    )
+                finally:
+                    task_env.cleanup()
 
                 conn.execute(
                     """
@@ -716,7 +931,9 @@ class Runner:
                     snap=snap_post,
                 )
 
-                delta_res = compute_attempt_deltas(snap_pre, snap_post)
+                delta_res = compute_attempt_deltas(
+                    snap_pre, snap_post, watched_buckets=config.buckets
+                )
                 if delta_res.invalid_reset:
                     conn.execute(
                         "UPDATE attempts SET valid = 0, invalid_reason = ? WHERE id = ?",
@@ -730,6 +947,19 @@ class Runner:
                 conn.commit()
                 last_post_snapshot = snap_post
 
+                # Check weekly fraction cap post-attempt
+                if weekly_bucket and max_weekly is not None:
+                    current_burn = get_cumulative_weekly_burn(conn, c_id, cfg_id, weekly_bucket)
+                    if current_burn >= max_weekly:
+                        logger.warning(
+                            "Config %s reached weekly cap after attempt (burned=%.4f >= max=%.4f)",
+                            config.label,
+                            current_burn,
+                            max_weekly,
+                        )
+                        aborted_configs.add(config.label)
+                        add_cycle_flag(conn, c_id, f"weekly_cap_reached:{config.label}")
+
                 # Quota exhaustion checks
                 if outcome.halt_reason == "quota_restricted":
                     # Check which bucket triggered it
@@ -741,9 +971,16 @@ class Runner:
                         add_cycle_flag(conn, c_id, f"weekly_exhausted:{config.label}")
                         break
 
-                    # 5h window exhaustion handling
-                    five_h_b = snap_post.buckets.get("gemini-5h")
-                    if five_h_b and five_h_b.remaining_fraction <= 1e-3:
+                    # 5h window exhaustion handling across config.buckets
+                    five_h_b = next(
+                        (
+                            snap_post.buckets[b_id]
+                            for b_id in config.buckets
+                            if b_id in snap_post.buckets and snap_post.buckets[b_id].window == "5h"
+                        ),
+                        None,
+                    )
+                    if five_h_b is not None:
                         w_used = windows_used.get(config.label, 1)
                         if w_used < self.manifest.quota.max_5h_windows_per_config_cycle:
                             windows_used[config.label] = w_used + 1
@@ -759,7 +996,8 @@ class Runner:
                                 except Exception:
                                     sleep_duration = 18030.0
                             logger.info(
-                                "5h quota exhausted. Sleeping %.1fs until reset...",
+                                "5h quota restricted on %s. Sleeping %.1fs until reset...",
+                                five_h_b.bucket_id,
                                 sleep_duration,
                             )
                             self.sleep_fn(sleep_duration)
@@ -771,7 +1009,14 @@ class Runner:
                             add_cycle_flag(conn, c_id, f"max_5h_windows_reached:{config.label}")
                             aborted_configs.add(config.label)
                             break
-                    break
+                    else:
+                        logger.warning(
+                            "Config %s quota restricted without 5h bucket; aborting config",
+                            config.label,
+                        )
+                        add_cycle_flag(conn, c_id, f"quota_restricted_abort:{config.label}")
+                        aborted_configs.add(config.label)
+                        break
                 else:
                     # Successful completion / normal halt, break attempt retry loop
                     break

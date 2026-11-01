@@ -31,10 +31,79 @@ def test_audit_real_calibration_sample_fixture_has_zero_leaks():
     leaks_ndjson = [f for f in findings_ndjson if f.severity == "leak"]
     assert len(leaks_ndjson) == 0
 
+    # At least 1 'info' git_history_probe finding
+    # (proving git log in stream_json.ndjson was genuinely parsed)
+    info_git_probes = [
+        f for f in findings_ndjson if f.kind == "git_history_probe" and f.severity == "info"
+    ]
+    assert len(info_git_probes) >= 1
+
     findings_proxy = audit_proxy_log(proxy_path)
     # Zero leak findings on proxy log (only Google APIs allowed, benign play.googleapis.com blocked)
     leaks_proxy = [f for f in findings_proxy if f.severity == "leak"]
     assert len(leaks_proxy) == 0
+
+
+def test_audit_active_done_deduplication():
+    # ACTIVE followed by DONE for same step_index should only emit 1 finding
+    active_line = json.dumps(
+        {
+            "event": "step_update",
+            "step_update": {
+                "step_index": 5,
+                "state": "ACTIVE",
+                "step_type": "tool",
+                "tool_name": "run_command",
+                "tool_info": {
+                    "name": "run_command",
+                    "parameters": {
+                        "CommandLine": "curl https://github.com/pytest-dev/pytest/pull/1.diff"
+                    },
+                },
+            },
+        }
+    )
+    done_line = json.dumps(
+        {
+            "event": "step_update",
+            "step_update": {
+                "step_index": 5,
+                "state": "DONE",
+                "step_type": "tool",
+                "tool_name": "run_command",
+                "tool_info": {
+                    "name": "run_command",
+                    "parameters": {
+                        "CommandLine": "curl https://github.com/pytest-dev/pytest/pull/1.diff"
+                    },
+                    "output": "diff content",
+                },
+            },
+        }
+    )
+    findings = audit_ndjson_events([active_line, done_line], task_repo="pytest-dev/pytest")
+    assert len(findings) == 1
+    assert findings[0].kind == "outbound_url_command"
+    assert findings[0].severity == "leak"
+
+
+def test_audit_truncated_active_event():
+    # Truncated ACTIVE event without DONE should still be audited
+    active_line = json.dumps(
+        {
+            "event": "step_update",
+            "step_update": {
+                "step_index": 8,
+                "state": "ACTIVE",
+                "step_type": "tool",
+                "tool_name": "search_web",
+            },
+        }
+    )
+    findings = audit_ndjson_events([active_line])
+    assert len(findings) == 1
+    assert findings[0].kind == "web_tool_call"
+    assert findings[0].severity == "warn"
 
 
 def test_audit_web_tool_call_leak_and_warn():

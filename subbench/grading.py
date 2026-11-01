@@ -226,7 +226,9 @@ def grade_cycle(
 
         patch_content = ""
         if patch_path and Path(patch_path).exists():
-            patch_content = Path(patch_path).read_text(encoding="utf-8", errors="replace").strip()
+            patch_content = Path(patch_path).read_text(encoding="utf-8", errors="replace")
+            if patch_content and not patch_content.endswith("\n"):
+                patch_content += "\n"
 
         att_dict = {
             "id": att_id,
@@ -239,7 +241,7 @@ def grade_cycle(
             "patch_content": patch_content,
         }
 
-        if not patch_content or patch_bytes == 0:
+        if not patch_content.strip() or patch_bytes == 0:
             empty_attempts.append(att_dict)
         else:
             non_empty_attempts.append(att_dict)
@@ -249,6 +251,32 @@ def grade_cycle(
         grade_attempt_empty(conn, emp["id"])
 
     # 2. Batch non-empty attempts with unique instance_ids
+    if non_empty_attempts:
+        if not dataset_jsonl.exists():
+            cur = conn.execute(
+                """
+                SELECT env.dataset_revision
+                FROM cycles c
+                JOIN environment env ON c.experiment_id = env.experiment_id
+                WHERE c.id = ?
+                """,
+                (cycle_id,),
+            )
+            row = cur.fetchone()
+            dataset_rev = row[0] if row and row[0] else None
+            if not dataset_rev:
+                raise RuntimeError(
+                    f"Dataset file {dataset_jsonl} not found and no dataset_revision in environment"
+                )
+            logger.info("Materializing dataset.jsonl from parquet for revision %s...", dataset_rev)
+            from subbench.tasks.dataset import fetch, load_rows, write_jsonl
+
+            parquet_p = fetch(dataset_rev)
+            rows_data = load_rows(parquet_p)
+            auto_dataset = grading_dir / "dataset.jsonl"
+            write_jsonl(rows_data, auto_dataset)
+            dataset_jsonl = auto_dataset
+
     batches = partition_into_unique_instance_batches(non_empty_attempts)
     for b_idx, batch in enumerate(batches):
         grade_batch(

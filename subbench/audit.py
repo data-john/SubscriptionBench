@@ -83,6 +83,23 @@ def audit_ndjson_events(
     findings: list[Finding] = []
     line_idx = 0
 
+    # Scan for completed/terminal step indices to avoid double-counting ACTIVE + DONE pairs
+    completed_step_indices: set[int] = set()
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        try:
+            item = json.loads(stripped)
+        except Exception:
+            continue
+        if item.get("event") == "step_update":
+            st = item.get("step_update", {})
+            s_idx = st.get("step_index")
+            s_state = st.get("state")
+            if s_idx is not None and s_state != "ACTIVE":
+                completed_step_indices.add(s_idx)
+
     for raw_line in lines:
         stripped = raw_line.strip()
         if not stripped:
@@ -96,12 +113,18 @@ def audit_ndjson_events(
         event_type = item.get("event")
         if event_type == "step_update":
             step = item.get("step_update", {})
-            tool_name = step.get("tool_name", "")
+            tool_info = step.get("tool_info") if isinstance(step.get("tool_info"), dict) else {}
+            tool_name = step.get("tool_name") or tool_info.get("name") or ""
             state = step.get("state", "")
+            step_index = step.get("step_index")
+
+            # Skip ACTIVE if a terminal state (DONE/ERROR) arrives later for this step
+            if state == "ACTIVE" and step_index in completed_step_indices:
+                continue
 
             # 1. Web / browser tool check
             if tool_name in WEB_TOOLS or tool_name.startswith("browser_"):
-                # If completed with output -> leak; if failed/denied -> warn
+                # If completed with output -> leak; if failed/denied/truncated -> warn
                 severity: Severity = "leak" if state == "DONE" else "warn"
                 findings.append(
                     Finding(
@@ -114,12 +137,16 @@ def audit_ndjson_events(
 
             # 2. Outbound network commands inside run_command / command
             if tool_name in ("command", "run_command"):
-                args = step.get("args") or step.get("command") or {}
+                params = tool_info.get("parameters") if isinstance(tool_info, dict) else {}
                 cmd_text = ""
-                if isinstance(args, dict):
-                    cmd_text = str(args.get("command") or args.get("CommandLine") or "")
-                elif isinstance(args, str):
-                    cmd_text = args
+                if isinstance(params, dict):
+                    cmd_text = str(params.get("CommandLine") or params.get("command") or "")
+                if not cmd_text:
+                    args = step.get("args") or step.get("command") or {}
+                    if isinstance(args, dict):
+                        cmd_text = str(args.get("CommandLine") or args.get("command") or "")
+                    elif isinstance(args, str):
+                        cmd_text = args
 
                 if cmd_text:
                     cmd_lower = cmd_text.lower()
@@ -155,9 +182,17 @@ def audit_ndjson_events(
                         )
                     )
                     if is_git_probe:
-                        output_str = str(step.get("output") or step.get("stdout") or "")
-                        # Count commit hashes in output
-                        commit_count = len(re.findall(r"\b[0-9a-f]{40}\b", output_str))
+                        output_str = ""
+                        if "output" in tool_info:
+                            output_str = str(tool_info["output"] or "")
+                        if not output_str:
+                            output_str = str(step.get("output") or step.get("stdout") or "")
+
+                        # Count commit headers in output
+                        commit_count = len(re.findall(r"(?m)^commit\s+[0-9a-f]{40}\b", output_str))
+                        if commit_count == 0 and "--oneline" in cmd_lower:
+                            commit_count = len(re.findall(r"(?m)^[0-9a-f]{7,40}\s+", output_str))
+
                         if commit_count > 1:
                             findings.append(
                                 Finding(
@@ -325,12 +360,21 @@ def audit_cycle(
             if candidate.exists():
                 proxy_p = candidate
 
+        derived_repo = ""
+        if inst_id and "__" in inst_id:
+            try:
+                owner, rest = inst_id.split("__", 1)
+                repo_name = rest.rsplit("-", 1)[0]
+                derived_repo = f"{owner}/{repo_name}"
+            except Exception:
+                derived_repo = ""
+
         findings = audit_attempt(
             conn,
             attempt_id=att_id,
             transcript_path=trans_p,
             proxy_log_path=proxy_p,
-            task_repo="",
+            task_repo=derived_repo,
             task_issue=inst_id,
         )
         total_findings += len(findings)

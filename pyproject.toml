@@ -27,6 +27,9 @@ suite = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.uv]
+default-groups = ["dev", "suite"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["subbench"]
 

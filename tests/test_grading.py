@@ -190,3 +190,86 @@ def test_grade_cycle_end_to_end_mock_harness(tmp_path: Path):
     # Check database state
     attempts = conn.execute("SELECT id, state FROM attempts ORDER BY id").fetchall()
     assert all(a[1] == "GRADED" for a in attempts)
+
+
+def test_grade_cycle_preserves_exact_patch_whitespace_and_trailing_context_line(tmp_path: Path):
+    db_path = tmp_path / "test.db"
+    conn = connect(db_path)
+    init_db(conn)
+
+    cur = conn.execute(
+        """
+        INSERT INTO experiments (
+            name, manifest_json, manifest_digest, suite_version, suite_digest, created_at
+        ) VALUES ('t', '{}', 'd', 's', 'd', '2026-11-01T10:00:00Z')
+        """
+    )
+    exp_id = cur.lastrowid
+    c_cur = conn.execute(
+        """
+        INSERT INTO cycles (experiment_id, started_at, status)
+        VALUES (?, '2026-11-01T10:00:00Z', 'running')
+        """,
+        (exp_id,),
+    )
+    cycle_id = c_cur.lastrowid
+    cfg_cur = conn.execute(
+        """
+        INSERT INTO configs (experiment_id, label, role, model_id, buckets_json)
+        VALUES (?, 'cfg', 'default', 'm', '[]')
+        """,
+        (exp_id,),
+    )
+    cfg_id = cfg_cur.lastrowid
+
+    # Patch ending in an empty context line (' \n')
+    raw_patch = (
+        "diff --git a/test.py b/test.py\n"
+        "--- a/test.py\n"
+        "+++ b/test.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " context_before\n"
+        "-old\n"
+        "+new\n"
+        " \n"
+    )
+    patch_file = tmp_path / "test_trailing_space.patch"
+    patch_file.write_text(raw_patch, encoding="utf-8")
+
+    conn.execute(
+        """
+        INSERT INTO attempts (
+            cycle_id, config_id, instance_id, pass_index, seq, state, valid,
+            patch_path, patch_bytes
+        ) VALUES (?, ?, 'inst-trailing-space', 0, 1, 'QUOTA_POST', 1, ?, ?)
+        """,
+        (cycle_id, cfg_id, str(patch_file), len(raw_patch.encode("utf-8"))),
+    )
+    conn.commit()
+
+    captured_predictions: list[dict] = []
+
+    def fake_harness(dataset_jsonl, predictions, ids, run_id, workdir, max_workers):
+        for line in predictions.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                captured_predictions.append(json.loads(line))
+        summary = {
+            "resolved_ids": [],
+            "unresolved_ids": ids,
+            "error_ids": [],
+            "empty_patch_ids": [],
+        }
+        model_name = f"subbench-c{cycle_id}-b0"
+        (workdir / f"{model_name}.{run_id}.json").write_text(json.dumps(summary))
+        return type("Proc", (), {"returncode": 0})()
+
+    grade_cycle(
+        conn,
+        cycle_id=cycle_id,
+        harness_fn=fake_harness,
+        workdir=tmp_path / "grading",
+    )
+
+    assert len(captured_predictions) == 1
+    assert captured_predictions[0]["model_patch"] == raw_patch
+    assert captured_predictions[0]["model_patch"].endswith(" \n")

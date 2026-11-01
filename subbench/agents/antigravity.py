@@ -231,9 +231,17 @@ class AntigravityAdapter:
         container_id: str,
         timeout_seconds: int,
         raw_output_path: Path | None = None,
+        stderr_output_path: Path | None = None,
     ) -> AttemptOutcome:
         ver_pre = self.get_version(container_id)
         exec_cmd = self.build_container_exec_args(container_id, prompt.text)
+
+        if stderr_output_path:
+            try:
+                stderr_output_path.parent.mkdir(parents=True, exist_ok=True)
+                stderr_output_path.touch(exist_ok=True)
+            except Exception as e:
+                logger.warning("Failed to initialize stderr file %s: %s", stderr_output_path, e)
 
         t0 = time.monotonic()
         stdout_lines: list[str] = []
@@ -284,7 +292,7 @@ class AntigravityAdapter:
             )
             t_err = threading.Thread(
                 target=_read_stream,
-                args=(proc.stderr, stderr_lines, None),
+                args=(proc.stderr, stderr_lines, stderr_output_path),
                 daemon=True,
             )
             t_out.start()

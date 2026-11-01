@@ -45,6 +45,7 @@ class BucketDelta:
     consumed: float
     pre_reset_time: str | None = None
     post_reset_time: str | None = None
+    reset_detected: bool = False
 
 
 @dataclass(frozen=True)
@@ -134,7 +135,11 @@ def parse_usage_json(
     )
 
 
-def compute_attempt_deltas(pre: QuotaSnapshot, post: QuotaSnapshot) -> AttemptQuotaResult:
+def compute_attempt_deltas(
+    pre: QuotaSnapshot,
+    post: QuotaSnapshot,
+    watched_buckets: Iterable[str] | None = None,
+) -> AttemptQuotaResult:
     """Compute per-bucket consumption and detect mid-attempt rolling window resets.
 
     Accounts for Phase 0's rolling-until-first-spend behavior: an unused rolling bucket
@@ -144,12 +149,36 @@ def compute_attempt_deltas(pre: QuotaSnapshot, post: QuotaSnapshot) -> AttemptQu
     deltas: dict[str, BucketDelta] = {}
     invalid_reset = False
     invalid_reasons: list[str] = []
+    watched_set = set(watched_buckets) if watched_buckets is not None else None
 
     for bucket_id, pre_b in pre.buckets.items():
         if bucket_id not in post.buckets:
             continue
         post_b = post.buckets[bucket_id]
         consumed = pre_b.remaining_fraction - post_b.remaining_fraction
+
+        b_reset_detected = False
+        # 1. Did the bucket fraction increase mid-attempt?
+        if post_b.remaining_fraction > pre_b.remaining_fraction + 1e-6:
+            b_reset_detected = True
+            msg = (
+                f"Bucket '{bucket_id}' fraction increased mid-attempt: "
+                f"{pre_b.remaining_fraction:.4f} -> {post_b.remaining_fraction:.4f}"
+            )
+            if watched_set is None or bucket_id in watched_set:
+                invalid_reset = True
+                invalid_reasons.append(msg)
+        # 2. Did reset_time shift when pre was already spent (< 1.0)?
+        elif pre_b.remaining_fraction < 1.0 - 1e-6:
+            if pre_b.reset_time != post_b.reset_time:
+                b_reset_detected = True
+                msg = (
+                    f"Bucket '{bucket_id}' reset_time changed mid-attempt from "
+                    f"{pre_b.reset_time} to {post_b.reset_time}"
+                )
+                if watched_set is None or bucket_id in watched_set:
+                    invalid_reset = True
+                    invalid_reasons.append(msg)
 
         deltas[bucket_id] = BucketDelta(
             bucket_id=bucket_id,
@@ -159,23 +188,8 @@ def compute_attempt_deltas(pre: QuotaSnapshot, post: QuotaSnapshot) -> AttemptQu
             consumed=consumed,
             pre_reset_time=pre_b.reset_time,
             post_reset_time=post_b.reset_time,
+            reset_detected=b_reset_detected,
         )
-
-        # 1. Did the bucket fraction increase mid-attempt?
-        if post_b.remaining_fraction > pre_b.remaining_fraction + 1e-6:
-            invalid_reset = True
-            invalid_reasons.append(
-                f"Bucket '{bucket_id}' fraction increased mid-attempt: "
-                f"{pre_b.remaining_fraction:.4f} -> {post_b.remaining_fraction:.4f}"
-            )
-        # 2. Did reset_time shift when pre was already spent (< 1.0)?
-        elif pre_b.remaining_fraction < 1.0 - 1e-6:
-            if pre_b.reset_time != post_b.reset_time:
-                invalid_reset = True
-                invalid_reasons.append(
-                    f"Bucket '{bucket_id}' reset_time changed mid-attempt from "
-                    f"{pre_b.reset_time} to {post_b.reset_time}"
-                )
 
     reason = "; ".join(invalid_reasons) if invalid_reasons else None
     return AttemptQuotaResult(

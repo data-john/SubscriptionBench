@@ -157,6 +157,17 @@ def test_runner_happy_path_state_machine(tmp_path: Path):
     cycle_id = runner.run()
     assert cycle_id == 1
 
+    # Verify prompt.txt contains real problem statement and NOT "Problem placeholder"
+    prompt_file = Path("artifacts") / "cycles" / f"cycle-{cycle_id}" / "attempt-1" / "prompt.txt"
+    assert prompt_file.exists()
+    prompt_text = prompt_file.read_text()
+    assert "Problem placeholder" not in prompt_text
+    assert len(prompt_text) > 100
+
+    # Verify stderr.txt exists
+    stderr_file = Path("artifacts") / "cycles" / f"cycle-{cycle_id}" / "attempt-1" / "stderr.txt"
+    assert stderr_file.exists()
+
     conn = connect(db_path)
     # Check attempts
     attempts = conn.execute("SELECT id, state, halt_reason, valid FROM attempts").fetchall()
@@ -353,3 +364,179 @@ def test_runner_crash_recovery_resume(tmp_path: Path):
     # Retried attempt succeeded
     assert rows[1][1] == rows[0][0]
     assert rows[1][3] == "completed"
+
+
+def test_runner_container_cleanup_on_adapter_exception(tmp_path: Path):
+    """Verify task_env.cleanup() runs via try/finally on unexpected adapter exception."""
+    m_path, _ = _make_dummy_manifest_and_suite(tmp_path, task_limit=1, passes=1)
+    db_path = tmp_path / "test.db"
+
+    cleaned_up = False
+
+    class TrackingEnv(FakeProvisioner):
+        def provision(self, instance_id: str, base_commit: str, attempt_dir: Path):
+            env = super().provision(instance_id, base_commit, attempt_dir)
+            orig_cleanup = env.cleanup
+
+            def tracked_cleanup():
+                nonlocal cleaned_up
+                cleaned_up = True
+                orig_cleanup()
+
+            env.cleanup = tracked_cleanup
+            return env
+
+    def exploding_adapter(cfg):
+        class ExplodingAdapter:
+            def run_attempt(self, **kwargs):
+                raise RuntimeError("Explosive failure inside agent execution!")
+
+        return ExplodingAdapter()
+
+    runner = Runner(
+        manifest_path=m_path,
+        db_path=db_path,
+        quota_probe=FakeQuotaProbe(),
+        adapter_factory=exploding_adapter,
+        provisioner=TrackingEnv(),
+        skip_idle_check=True,
+    )
+
+    cycle_id = runner.run()
+    assert cycle_id == 1
+    assert cleaned_up is True
+
+    conn = connect(db_path)
+    att = conn.execute("SELECT halt_reason, error_text FROM attempts WHERE id = 1").fetchone()
+    assert att[0] == "agent_error"
+    assert "Explosive failure" in att[1]
+
+
+def test_runner_max_weekly_fraction_per_config_cycle(tmp_path: Path):
+    """Verify max_weekly_fraction_per_config_cycle halts config after burn exceeds cap."""
+    cfg_eff = ConfigSpec(
+        label="efficient-flash",
+        role=ConfigRole.EFFICIENT,
+        model_id="gemini-3.8-flash",
+        buckets=["gemini-5h", "gemini-weekly"],
+    )
+    m_path, _ = _make_dummy_manifest_and_suite(
+        tmp_path,
+        task_limit=2,
+        passes=1,
+        configs=[cfg_eff],
+        quota={
+            "primary_bucket_by_config": {"efficient-flash": "gemini-5h"},
+            "weekly_bucket_by_config": {"efficient-flash": "gemini-weekly"},
+            "idle_check_seconds": 0,
+            "max_weekly_fraction_per_config_cycle": 0.05,
+        },
+    )
+    db_path = tmp_path / "test.db"
+
+    # Snapshots sequence:
+    # Attempt 1: pre weekly=0.95, post weekly=0.88 (burns 0.07 >= 0.05 cap!)
+    snaps = [
+        QuotaSnapshot(
+            buckets={"gemini-weekly": BucketReading("gemini-weekly", "weekly", 0.95)},
+            taken_at="2026-11-01T10:00:00Z",
+            provenance="manual",
+            raw_json="{}",
+        ),
+        QuotaSnapshot(
+            buckets={"gemini-weekly": BucketReading("gemini-weekly", "weekly", 0.88)},
+            taken_at="2026-11-01T10:15:00Z",
+            provenance="manual",
+            raw_json="{}",
+        ),
+    ]
+
+    runner = Runner(
+        manifest_path=m_path,
+        db_path=db_path,
+        quota_probe=FakeQuotaProbe(snapshots=snaps),
+        adapter_factory=lambda cfg: FakeAgentAdapter(halt_reason="completed"),
+        provisioner=FakeProvisioner(),
+        skip_idle_check=True,
+    )
+
+    cycle_id = runner.run()
+    conn = connect(db_path)
+    flags = conn.execute("SELECT flags_json FROM cycles WHERE id = ?", (cycle_id,)).fetchone()[0]
+    assert "weekly_cap_reached:efficient-flash" in flags
+
+    # Task 2 should have been skipped because config was aborted
+    attempts = conn.execute("SELECT count(*) FROM attempts").fetchone()[0]
+    assert attempts == 1
+
+
+def test_runner_pre_attempt_5h_exhaustion(tmp_path: Path):
+    """Verify pre-attempt 5h bucket exhaustion sleeps without provisioning doomed attempt."""
+    cfg_eff = ConfigSpec(
+        label="efficient-flash",
+        role=ConfigRole.EFFICIENT,
+        model_id="gemini-3.8-flash",
+        buckets=["gemini-5h", "gemini-weekly"],
+    )
+    m_path, _ = _make_dummy_manifest_and_suite(
+        tmp_path,
+        task_limit=1,
+        passes=1,
+        configs=[cfg_eff],
+        quota={
+            "primary_bucket_by_config": {"efficient-flash": "gemini-5h"},
+            "weekly_bucket_by_config": {"efficient-flash": "gemini-weekly"},
+            "idle_check_seconds": 0,
+            "max_5h_windows_per_config_cycle": 2,
+        },
+    )
+    db_path = tmp_path / "test.db"
+    slept: list[float] = []
+
+    # Snapshots:
+    # 1. pre: 5h=0.0005 (exhausted pre-attempt, reset in 100s)
+    # 2. pre after sleep: 5h=0.90 (restored)
+    # 3. post: 5h=0.85 (completed)
+    snaps = [
+        QuotaSnapshot(
+            buckets={"gemini-5h": BucketReading("gemini-5h", "5h", 0.0005, "2026-11-01T15:00:00Z")},
+            taken_at="2026-11-01T10:00:00Z",
+            provenance="manual",
+            raw_json="{}",
+        ),
+        QuotaSnapshot(
+            buckets={"gemini-5h": BucketReading("gemini-5h", "5h", 0.90, "2026-11-01T20:00:00Z")},
+            taken_at="2026-11-01T15:00:30Z",
+            provenance="manual",
+            raw_json="{}",
+        ),
+        QuotaSnapshot(
+            buckets={"gemini-5h": BucketReading("gemini-5h", "5h", 0.85, "2026-11-01T20:00:00Z")},
+            taken_at="2026-11-01T15:15:00Z",
+            provenance="manual",
+            raw_json="{}",
+        ),
+    ]
+
+    provision_count = 0
+
+    class CountingProvisioner(FakeProvisioner):
+        def provision(self, instance_id, base_commit, attempt_dir):
+            nonlocal provision_count
+            provision_count += 1
+            return super().provision(instance_id, base_commit, attempt_dir)
+
+    runner = Runner(
+        manifest_path=m_path,
+        db_path=db_path,
+        quota_probe=FakeQuotaProbe(snapshots=snaps),
+        adapter_factory=lambda cfg: FakeAgentAdapter(halt_reason="completed"),
+        provisioner=CountingProvisioner(),
+        sleep_fn=lambda s: slept.append(s),
+        skip_idle_check=True,
+    )
+
+    runner.run()
+    assert len(slept) == 1
+    # Only 1 provision occurred because pre-attempt check prevented provisioning when exhausted!
+    assert provision_count == 1

@@ -81,6 +81,46 @@ def test_compute_attempt_deltas_normal():
     assert abs(res.deltas["gemini-weekly"].consumed - 0.01) < 1e-6
 
 
+def test_compute_attempt_deltas_watched_buckets_scoping():
+    # 3p-5h resets mid-attempt (fraction increases from 0.10 to 1.00),
+    # but the attempt config only watched ['gemini-argon-wtu-weekly'].
+    pre = QuotaSnapshot(
+        buckets={
+            "3p-5h": BucketReading("3p-5h", "5h", 0.10, "2026-11-01T15:00:00Z"),
+            "gemini-argon-wtu-weekly": BucketReading(
+                "gemini-argon-wtu-weekly", "weekly", 0.90, "2026-11-07T00:00:00Z"
+            ),
+        },
+        taken_at="2026-11-01T10:00:00Z",
+        provenance="agy_usage",
+        raw_json="{}",
+    )
+    post = QuotaSnapshot(
+        buckets={
+            "3p-5h": BucketReading("3p-5h", "5h", 1.00, "2026-11-01T20:00:00Z"),
+            "gemini-argon-wtu-weekly": BucketReading(
+                "gemini-argon-wtu-weekly", "weekly", 0.88, "2026-11-07T00:00:00Z"
+            ),
+        },
+        taken_at="2026-11-01T10:15:00Z",
+        provenance="agy_usage",
+        raw_json="{}",
+    )
+
+    # Scoped to Argon: 3p-5h reset must NOT invalidate the Argon attempt
+    res = compute_attempt_deltas(pre, post, watched_buckets=["gemini-argon-wtu-weekly"])
+    assert res.invalid_reset is False
+    assert res.invalid_reason is None
+    assert res.deltas["3p-5h"].reset_detected is True
+    assert res.deltas["gemini-argon-wtu-weekly"].reset_detected is False
+    assert abs(res.deltas["gemini-argon-wtu-weekly"].consumed - 0.02) < 1e-6
+
+    # When unwatched (None), 3p-5h reset does trigger invalid_reset
+    res_unwatched = compute_attempt_deltas(pre, post, watched_buckets=None)
+    assert res_unwatched.invalid_reset is True
+    assert "3p-5h" in (res_unwatched.invalid_reason or "")
+
+
 def test_compute_attempt_deltas_rolling_first_spend():
     # If pre was 1.0 (virgin rolling window), reset_time anchors on first spend.
     # This must NOT be flagged as an invalid_reset!

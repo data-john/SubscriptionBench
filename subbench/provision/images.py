@@ -45,6 +45,12 @@ def image_exists(tag: str) -> bool:
     return res.returncode == 0
 
 
+def verify_base_image_exists(instance_id: str) -> bool:
+    """Verify that the base image for an instance exists locally."""
+    base = get_base_image_for_instance(instance_id)
+    return image_exists(base)
+
+
 def build_overlay_image(
     instance_id: str,
     base_image: str | None = None,

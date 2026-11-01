@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 from subbench.agents.prompts import RenderedPrompt
@@ -63,6 +64,8 @@ class AgentAdapter(Protocol):
         prompt: RenderedPrompt,
         container_id: str,
         timeout_seconds: int,
+        raw_output_path: Path | None = None,
+        stderr_output_path: Path | None = None,
     ) -> AttemptOutcome:
         """Run an attempt inside the provisioned container until completion or timeout."""
         ...

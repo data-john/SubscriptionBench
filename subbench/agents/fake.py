@@ -41,6 +41,7 @@ class FakeAgentAdapter:
         container_id: str,
         timeout_seconds: int,
         raw_output_path: Path | None = None,
+        stderr_output_path: Path | None = None,
     ) -> AttemptOutcome:
         if raw_output_path:
             raw_output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -50,6 +51,9 @@ class FakeAgentAdapter:
                 '{"event":"step_update","step_update":{"step_index":0,"state":"DONE","tool_name":"edit_file"}}\n'
                 f'{{"event":"result","result":{{"status":"{res_status}"}}}}\n'
             )
+        if stderr_output_path:
+            stderr_output_path.parent.mkdir(parents=True, exist_ok=True)
+            stderr_output_path.write_text("")
         return AttemptOutcome(
             halt_reason=self.halt_reason,
             exit_code=0 if self.halt_reason == "completed" else 1,
