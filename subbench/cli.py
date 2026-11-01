@@ -56,6 +56,29 @@ def validate(
         typer.echo(f"suite {exp.suite} not found yet (created in Phase 2)")
 
 
+@app.command("run")
+def run_cmd(
+    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Experiment YAML.")],
+    cycle_id: Annotated[int | None, typer.Option(help="Cycle ID to resume.")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Print schedule and exit.")] = False,
+    db: Annotated[Path, typer.Option(help="SQLite database path.")] = DEFAULT_DB,
+    skip_idle_check: Annotated[
+        bool, typer.Option("--skip-idle-check", help="Skip pre-flight idle check.")
+    ] = False,
+) -> None:
+    """Run an experiment cycle or print a dry run."""
+    from .runner import Runner
+
+    runner = Runner(
+        manifest_path=manifest,
+        db_path=db,
+        skip_idle_check=skip_idle_check,
+    )
+    c_id = runner.run(cycle_id=cycle_id, dry_run=dry_run)
+    if not dry_run:
+        typer.echo(f"Cycle {c_id} completed successfully.")
+
+
 @suite_app.command("build")
 def suite_build(
     revision: Annotated[str, typer.Option(help="Exact HF dataset commit sha (40 chars).")],

@@ -35,3 +35,11 @@ def test_quota_snapshot_cli(tmp_path: Path):
     assert res.exit_code == 0, res.output
     assert "gemini-weekly" in res.output
     assert "Saved snapshot" in res.output
+
+
+def test_run_dry_run_cli():
+    baseline_yaml = ROOT / "experiments" / "baseline.yaml"
+    res = runner.invoke(app, ["run", str(baseline_yaml), "--dry-run"])
+    assert res.exit_code == 0, res.output
+    assert "Dry run for manifest: baseline" in res.output
+    assert "pytest-dev__pytest-5809" in res.output

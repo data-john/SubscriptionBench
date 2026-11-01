@@ -111,6 +111,7 @@ def save_attempt_artifacts(
             src_path = Path(src)
             if src_path.exists():
                 dst = artifacts_dir / name
-                shutil.copy2(src_path, dst)
+                if src_path.resolve() != dst.resolve():
+                    shutil.copy2(src_path, dst)
 
     return patch_path
