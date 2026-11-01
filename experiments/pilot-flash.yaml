@@ -14,6 +14,7 @@ configs:
     model_id: gemini-3.8-flash-medium
     buckets: [gemini-5h, gemini-weekly]
 quota:
+  idle_check_seconds: 15
   weekly_bucket_by_config:
     efficient-flash-medium: gemini-weekly
   primary_bucket_by_config:

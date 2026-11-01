@@ -65,6 +65,9 @@ def run_cmd(
     skip_idle_check: Annotated[
         bool, typer.Option("--skip-idle-check", help="Skip pre-flight idle check.")
     ] = False,
+    idle_seconds: Annotated[
+        int | None, typer.Option("--idle-seconds", help="Override pre-flight idle check seconds.")
+    ] = None,
 ) -> None:
     """Run an experiment cycle or print a dry run."""
     from .runner import Runner
@@ -74,6 +77,8 @@ def run_cmd(
         db_path=db,
         skip_idle_check=skip_idle_check,
     )
+    if idle_seconds is not None:
+        runner.manifest.quota.idle_check_seconds = idle_seconds
     c_id = runner.run(cycle_id=cycle_id, dry_run=dry_run)
     if not dry_run:
         typer.echo(f"Cycle {c_id} completed successfully.")
