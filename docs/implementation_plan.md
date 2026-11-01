@@ -102,38 +102,44 @@ Recorded in [`docs/phase0_findings.md`](phase0_findings.md).
 - [x] Thin overlay & keyring auth, `HTTPS_PROXY`-only task container networking, `DEFAULT_EGRESS_ALLOWLIST`, `--disable-slash-commands`, 18-tool web/browser `permissions.deny`, daemon-thread stdout streaming with real subprocess timeout & in-container `pkill`, binary-safe patch capture (`unstage_binary_files`), and `experiments/` repo hygiene.
 - [ ] **Minor adapter follow-up (queued in Phase 7–8 Milestone 1):** Persist `stderr` stream to `attempt_dir / "stderr.txt"` so `attempts.stderr_path` resolves on disk.
 
-### Phase 4: Quota probe — **Implemented** (`0a556d1`; 1 bugfix queued)
+### Phase 4: Quota probe — **Implemented** (`0a556d1`, fixes in `df8e6de`)
 - [x] `QuotaSnapshot`, `parse_usage_json` (with rolling `pre == 1.0` first-spend handling and defensive credit-field check), `detect_external_use`, `check_idle`, `save_quota_snapshot`, `AgyUsageProbe` (`subbench-agy:probe`), `ManualQuotaProbe`, and `subbench quota snapshot`.
-- [ ] **Queued fix (`quota/base.py`):** Scope `compute_attempt_deltas` `invalid_reset` detection to `watched_buckets` (`config.buckets`) so unrelated resets on `3p-5h` or `gemini-5h` never invalidate an Argon attempt.
+- [x] **Resolved fix (`quota/base.py` in `df8e6de`):** Scoped `compute_attempt_deltas` `invalid_reset` detection to `watched_buckets` (`config.buckets`) so unrelated resets on `3p-5h` or `gemini-5h` never invalidate an Argon attempt.
 
-### Phase 5: Runner — **Implemented** (`6e95bc9`; critical fixes queued before Phase 8)
+### Phase 5: Runner — **Implemented** (`6e95bc9`, fixes in `df8e6de`)
 - [x] Pass-interleaved schedule, SQLite state machine (`PENDING → ... → QUOTA_POST`), crash/resume recovery, `retry_of` tracking, and `subbench run [--dry-run]`.
-- [ ] **Queued fixes (`runner.py` & `pyproject.toml`, detailed in [`docs/handover_phases7_8.md`](handover_phases7_8.md)):**
-  1. **CRITICAL — Load real SWE-bench `problem_statement`:** Replace hardcoded `problem_statement="Problem placeholder"` in `Runner.run` with pinned dataset lookup (`subbench.tasks.dataset.fetch(suite.dataset_revision)` / `load_rows`, plus injectable mapping for offline tests), and configure `[tool.uv] default-groups = ["dev", "suite"]` in `pyproject.toml`.
-  2. **HIGH — Container/proxy cleanup safety:** Wrap `task_env = self.provisioner.provision(...)` in `try ... finally: task_env.cleanup()` so exceptions or `Ctrl-C` never leak `subbench-task-*` or `subbench-proxy` containers.
-  3. **MEDIUM — Quota-policy & metadata completeness:** Enforce `max_weekly_fraction_per_config_cycle`, check pre-attempt `5h` exhaustion (`<= 1e-3`) before provisioning, generalize `5h` bucket detection across `config.buckets` (plus near-limit `quota_restricted` handling when `remaining_fraction > 1e-3`), record real `agy`/`docker`/`swebench` versions and template SHA-256 in `record_environment`, and validate `agy_path`/Docker/suite images in `run_preflight`.
+- [x] **Resolved fixes (`df8e6de`):**
+  1. **CRITICAL — Load real SWE-bench `problem_statement`:** Replaced hardcoded `problem_statement="Problem placeholder"` in `Runner.run` with pinned dataset lookup (`subbench.tasks.dataset.fetch(suite.dataset_revision)` / `load_rows`, plus injectable mapping for offline tests), and configured `[tool.uv] default-groups = ["dev", "suite"]` in `pyproject.toml`.
+  2. **HIGH — Container/proxy cleanup safety:** Wrapped `task_env = self.provisioner.provision(...)` in `try ... finally: task_env.cleanup()` so exceptions or `Ctrl-C` never leak `subbench-task-*` or `subbench-proxy` containers.
+  3. **MEDIUM — Quota-policy & metadata completeness:** Enforced `max_weekly_fraction_per_config_cycle`, checked pre-attempt `5h` exhaustion (`<= 1e-3`) before provisioning, generalized `5h` bucket detection across `config.buckets` (plus near-limit `quota_restricted` handling when `remaining_fraction > 1e-3`), recorded real `agy`/`docker`/`swebench` versions and template SHA-256 in `record_environment`, and validated `agy_path`/Docker/suite images in `run_preflight`.
 
-### Phase 6: Grading and audit — **Implemented** (`194d924`; 2 critical/high fixes queued)
+### Phase 6: Grading and audit — **Implemented** (`194d924`, fixes in `df8e6de`)
 - [x] Unique-`instance_id` batching (`partition_into_unique_instance_batches`), empty-patch short-circuiting, per-instance `report.json` parsing, idempotent `audit_findings` persistence, and `subbench grade` / `subbench audit`.
-- [ ] **Queued fixes (`audit.py` & `grading.py`, detailed in [`docs/handover_phases7_8.md`](handover_phases7_8.md)):**
-  1. **CRITICAL — Fix `audit_ndjson_events` `tool_info` JSON path & deduplication:** Extract `CommandLine` and `output` from `step["tool_info"]["parameters"]` and `step["tool_info"]["output"]` (matching real `agy` v1.4.12 NDJSON), inspect `state != "ACTIVE"` so `ACTIVE`+`DONE` pairs do not double-fire, count actual `git log` commit headers rather than arbitrary 40-hex strings in file diffs, and pass `task_repo` in `audit_cycle`.
-  2. **HIGH — Preserve exact unified diff formatting in `grading.py`:** Remove `.strip()` when loading `patch_path` (which strips trailing newlines and corrupts trailing empty context lines `" \n"`), using `.strip()` only for emptiness detection, and auto-materialize `dataset.jsonl` from the pinned parquet cache if absent.
+- [x] **Resolved fixes (`df8e6de`):**
+  1. **CRITICAL — Fix `audit_ndjson_events` `tool_info` JSON path & deduplication:** Extracted `CommandLine` and `output` from `step["tool_info"]["parameters"]` and `step["tool_info"]["output"]` (matching real `agy` v1.4.12 NDJSON), inspect `state != "ACTIVE"` so `ACTIVE`+`DONE` pairs do not double-fire, count actual `git log` commit headers (`(?m)^commit\s+[0-9a-f]{40}\b`) rather than arbitrary 40-hex strings in file diffs, and pass derived `task_repo` in `audit_cycle`.
+  2. **HIGH — Preserve exact unified diff formatting in `grading.py`:** Removed `.strip()` when loading `patch_path` (preserving exact hunk line counts and trailing context lines `" \n"`), using `.strip()` only for emptiness detection, and auto-materialize `dataset.jsonl` from the pinned parquet cache if absent.
 
-### Phase 7: Metrics and reporting — **Next up** (`subbench/report/`)
-- **SQLite query & metric engine (`subbench/report/metrics.py`):**
+### Phase 7: Metrics and reporting — **Implemented** (`7367ade`)
+- [x] **SQLite query & metric engine (`subbench/report/metrics.py`):**
   - Evaluates task resolution on the **final** attempt per `(config_id, instance_id, pass_index)` (`MAX(seq)`), while summing quota consumption across **all `valid = 1` attempts** for that config (including aborted/retried attempts per D9; pairing efficiency numerator `resolved_valid` with `valid = 1` quota denominator so `invalid_reset` attempts never skew efficiency).
   - Computes **both** `primary_bucket` and `weekly_bucket` metrics per config: consumed fraction & percentage points (`pp`), projected `tasks_per_full_bucket`, `pct_points_per_resolved_task`, raw resolve rate (`resolved / planned` and `resolved / attempted`), pure-Python **Wilson 95% CIs**, median/max `wall_seconds`, median `tool_calls`, token totals, failure/halt taxonomy (`completed`, `timeout`, `quota_restricted`, `agent_error`, `infra_error`, `empty_patch`, `patch_apply_failed`), and contamination/audit counts.
   - Builds the **paired `12 × config` outcome matrix** (`instance_id`, `repo`, `difficulty`, per-config status, wall time, weekly `pp`, tool calls) and optional **longitudinal delta** table against a prior cycle on the same `suite_digest`.
-- **Renderers & exports (`subbench/report/render.py`, `export.py`, `charts.py`):**
+- [x] **Renderers & exports (`subbench/report/render.py`, `export.py`, `charts.py`):**
   - `summary.md`: GFM report with mandatory pool-sharing/disjoint-bucket disclosures (F3), summary metrics, paired task matrix, halt/audit breakdown, and longitudinal deltas.
   - `attempts.csv`, `attempts.parquet`, `config_metrics.csv`, `config_metrics.parquet`.
   - Pure-Python zero-dependency **SVG charts** (`efficiency_vs_accuracy.svg`, `task_matrix.svg`).
-- **CLI:** `subbench report --cycle-id ID [--compare-cycle-id ID] [--out-dir PATH] [--db PATH]`.
+- [x] **CLI:** `subbench report --cycle-id ID [--compare-cycle-id ID] [--out-dir PATH] [--db PATH]`.
+- [x] **Offline Test Suite:** 5 comprehensive integration tests in `tests/test_report.py` (Wilson score intervals, retry quota summing, early aborts, SVG validation, Parquet roundtrip, leak warning banners, longitudinal CLI comparison).
 
-### Phase 8: Pilot, then baseline — **Next up (Quota-Gated)**
-- **Gate 0:** Operator ToS review (Phase 0 #11), `subbench quota snapshot` check, all interactive Antigravity sessions closed, plain host terminal (`tmux`).
-- **Stage 1 (`pilot-flash.yaml`):** 3 tasks × `efficient-flash-medium` → `grade` → `audit` → `report` → mandatory operator inspection gate (~1–3 pp `gemini-weekly`, `0.00 pp` Argon weekly).
-- **Stage 2 (`baseline.yaml`):** 12 tasks × 3 configs × `passes: 1` (36 attempts), launched only when `gemini-argon-wtu-weekly` and `gemini-weekly` have safe headroom (or after weekly reset) so interactive development never stalls.
+### Phase 8: Pilot, then baseline — **In Progress (Pre-flight verified, Quota-Gated)**
+- [x] **Pre-flight verification (`0.00%` model quota):**
+  - All 103 offline unit tests green across all modules (`store`, `config`, `quota`, `curate`, `dataset`, `prompts`, `grading`, `audit`, `runner`, `report`).
+  - Dry-run validation passed for both `pilot-flash.yaml` (3 attempts) and `baseline.yaml` (36 attempts).
+  - All 12 evaluation docker images (`swebench/sweb.eval.*`) present locally.
+  - Host disk space verified (38 GB available, >= 30 GB threshold).
+  - Zero-cost live quota snapshot verified: `gemini-5h` at 79.51% (>= 25% required), `gemini-weekly` at 82.58% (>= 15% required), `gemini-argon-wtu-weekly` at 75.57%.
+- [ ] **Stage 1 (`pilot-flash.yaml`):** 3 tasks × `efficient-flash-medium` → `grade` → `audit` → `report` → mandatory operator inspection gate (~1–3 pp `gemini-weekly`, `0.00 pp` Argon weekly).
+- [ ] **Stage 2 (`baseline.yaml`):** 12 tasks × 3 configs × `passes: 1` (36 attempts), launched only when `gemini-argon-wtu-weekly` and `gemini-weekly` have safe headroom (or after weekly reset) so interactive development never stalls.
 
 ### Phase 9: Longitudinal automation (post-baseline)
 - Bi-weekly systemd user timer with pre-run idle check and longitudinal report generation (`--compare-cycle-id`).
