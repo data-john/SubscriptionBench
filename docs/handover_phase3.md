@@ -1,5 +1,8 @@
 # Worker Handover: Phases 0–2 Completion & Phase 3 Implementation
 
+> [!NOTE]
+> **Status: Completed (commits `420e259`, `9617812`, `4e2589b`).** Superseded by [`docs/handover_phases4_6.md`](handover_phases4_6.md), which covers targeted Phase 3 follow-up fixes and Phases 4–6 implementation.
+
 **Date:** 2026-11-01  
 **Target scope:** Finish remaining/remediation items from Phases 0–2, implement **Phase 3** (provisioning, egress allowlist proxy, prompt templates, and `AntigravityAdapter`), and run the **SWE-bench calibration** (Phase 0 Item 10) to inform D15.
 

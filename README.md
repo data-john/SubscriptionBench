@@ -127,7 +127,7 @@ Each benchmark run produces a reproducible dataset and a concise summary report 
 
 ## Development
 
-* Plan: [`docs/implementation_plan.md`](docs/implementation_plan.md). Phase 0 results: [`docs/phase0_findings.md`](docs/phase0_findings.md). Next-batch handover: [`docs/handover_phase3.md`](docs/handover_phase3.md).
+* Plan: [`docs/implementation_plan.md`](docs/implementation_plan.md). Phase 0/3 results: [`docs/phase0_findings.md`](docs/phase0_findings.md). Next-batch handover: [`docs/handover_phases4_6.md`](docs/handover_phases4_6.md).
 * Requires [`uv`](https://docs.astral.sh/uv/), Python 3.12, and Docker (suite validation and grading).
 
 ```bash

@@ -3,7 +3,7 @@ name: baseline
 description: Default / efficient / capable Google configs over the full suite.
 suite: suites/verified-mvp-v1.json
 agy_path: /home/john/.local/bin/agy
-passes: 2          # D7 recommendation
+passes: 1          # D15: complete 1 full matched pass first to conserve shared weekly quotas
 timeout_minutes: 45
 prompt_template: minimal-v1
 configs:
