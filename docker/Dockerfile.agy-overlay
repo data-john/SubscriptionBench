@@ -1,0 +1,15 @@
+ARG BASE_IMAGE=swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-5809:latest
+FROM ${BASE_IMAGE}
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        dbus-x11 \
+        gnome-keyring \
+        libsecret-1-0 \
+        ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY docker/entrypoint-agy.sh /usr/local/bin/entrypoint-agy.sh
+RUN chmod +x /usr/local/bin/entrypoint-agy.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint-agy.sh"]
