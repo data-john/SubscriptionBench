@@ -1,0 +1,146 @@
+{
+  "pytest-dev__pytest-5809": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  },
+  "psf__requests-2931": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  },
+  "pytest-dev__pytest-6197": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  },
+  "sphinx-doc__sphinx-7889": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  },
+  "django__django-14771": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  },
+  "sphinx-doc__sphinx-11510": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  },
+  "sympy__sympy-14711": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  },
+  "sphinx-doc__sphinx-7757": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  },
+  "astropy__astropy-13579": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  },
+  "psf__requests-1142": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  },
+  "pytest-dev__pytest-8399": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  },
+  "sympy__sympy-16597": {
+    "gold": [
+      true,
+      true
+    ],
+    "noop": [
+      false,
+      false
+    ],
+    "error": null,
+    "passed": true
+  }
+}

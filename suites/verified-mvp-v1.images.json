@@ -1,0 +1,65 @@
+{
+  "images": {
+    "astropy__astropy-13579": {
+      "id": "sha256:62d1a79236c822e6632a7de6d3c35b1670efd7fa5432057c33a0c4dbd73681b0",
+      "image": "swebench/sweb.eval.x86_64.astropy_1776_astropy-13579:latest",
+      "size_bytes": 2890886578
+    },
+    "django__django-14771": {
+      "id": "sha256:5994e5ec38df96106aa0696a72d7c7ea538bbcc1783a0de1b69fdb02b547931a",
+      "image": "swebench/sweb.eval.x86_64.django_1776_django-14771:latest",
+      "size_bytes": 3006184234
+    },
+    "psf__requests-1142": {
+      "id": "sha256:ebfed0b9a44723b3ab1e934f0b040f843abf01e1a3a8b248e150d314e949cfaa",
+      "image": "swebench/sweb.eval.x86_64.psf_1776_requests-1142:latest",
+      "size_bytes": 2673598544
+    },
+    "psf__requests-2931": {
+      "id": "sha256:d169b644e994bc20c0d77719b008e34fdd9afab2c211d7f52e27a578e692c75b",
+      "image": "swebench/sweb.eval.x86_64.psf_1776_requests-2931:latest",
+      "size_bytes": 2675982330
+    },
+    "pytest-dev__pytest-5809": {
+      "id": "sha256:f60a775b879d5b770d9969b17dcfd45e717410059234e727e02236080b2e47c1",
+      "image": "swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-5809:latest",
+      "size_bytes": 2680322191
+    },
+    "pytest-dev__pytest-6197": {
+      "id": "sha256:503678cac345e4e967acfc3ac6e6bec391290714059aaebf174f99394500156b",
+      "image": "swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-6197:latest",
+      "size_bytes": 2680719053
+    },
+    "pytest-dev__pytest-8399": {
+      "id": "sha256:3c85fd166169c5582bd607e3b996512d2e98a5edc732ab18de0ae8fd0dffabf6",
+      "image": "swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-8399:latest",
+      "size_bytes": 2684159963
+    },
+    "sphinx-doc__sphinx-11510": {
+      "id": "sha256:ef65c93f68bbc3d40e35f0ec753a359e8de0e5e710fa3225aab2f629131b2807",
+      "image": "swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-11510:latest",
+      "size_bytes": 2963594832
+    },
+    "sphinx-doc__sphinx-7757": {
+      "id": "sha256:2ec63928131f897d3eb58b599aa6e4c6fe34db8b1e523ea7f075c8da70102b02",
+      "image": "swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7757:latest",
+      "size_bytes": 2810918643
+    },
+    "sphinx-doc__sphinx-7889": {
+      "id": "sha256:d756a9e0cc7bc18ac26c47af22249c99d3ff2eaeda8b9e45c6edec3024f0a89c",
+      "image": "swebench/sweb.eval.x86_64.sphinx-doc_1776_sphinx-7889:latest",
+      "size_bytes": 2811144417
+    },
+    "sympy__sympy-14711": {
+      "id": "sha256:bba8a91b93b45d122124ca49f4a9aea5efec3cf1877997b46f33433e1a9e5fd5",
+      "image": "swebench/sweb.eval.x86_64.sympy_1776_sympy-14711:latest",
+      "size_bytes": 2748979822
+    },
+    "sympy__sympy-16597": {
+      "id": "sha256:59c3feb43ef65a47e9d969d41d058cc5e9e664a27900fb750311a05b04733629",
+      "image": "swebench/sweb.eval.x86_64.sympy_1776_sympy-16597:latest",
+      "size_bytes": 2758865790
+    }
+  },
+  "total_bytes": 33385356397
+}

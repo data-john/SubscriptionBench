@@ -1,0 +1,92 @@
+{
+  "version": "verified-mvp-v1",
+  "dataset": "princeton-nlp/SWE-bench_Verified",
+  "dataset_revision": "c104f840cc67f8b6eec6f759ebc8b2693d585d4a",
+  "seed": 20261031,
+  "tasks": [
+    {
+      "instance_id": "pytest-dev__pytest-5809",
+      "repo": "pytest-dev/pytest",
+      "base_commit": "8aba863a634f40560e25055d179220f0eefabe9a",
+      "difficulty": "<15 min fix",
+      "order": 0
+    },
+    {
+      "instance_id": "psf__requests-2931",
+      "repo": "psf/requests",
+      "base_commit": "5f7a3a74aab1625c2bb65f643197ee885e3da576",
+      "difficulty": "15 min - 1 hour",
+      "order": 1
+    },
+    {
+      "instance_id": "pytest-dev__pytest-6197",
+      "repo": "pytest-dev/pytest",
+      "base_commit": "e856638ba086fcf5bebf1bebea32d5cf78de87b4",
+      "difficulty": "1-4 hours",
+      "order": 2
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-7889",
+      "repo": "sphinx-doc/sphinx",
+      "base_commit": "ec9af606c6cfa515f946d74da9b51574f2f9b16f",
+      "difficulty": "<15 min fix",
+      "order": 3
+    },
+    {
+      "instance_id": "django__django-14771",
+      "repo": "django/django",
+      "base_commit": "4884a87e022056eda10534c13d74e49b8cdda632",
+      "difficulty": "15 min - 1 hour",
+      "order": 4
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-11510",
+      "repo": "sphinx-doc/sphinx",
+      "base_commit": "6cb783c0024a873722952a67ebb9f41771c8eb6d",
+      "difficulty": "1-4 hours",
+      "order": 5
+    },
+    {
+      "instance_id": "sympy__sympy-14711",
+      "repo": "sympy/sympy",
+      "base_commit": "c6753448b5c34f95e250105d76709fe4d349ca1f",
+      "difficulty": "<15 min fix",
+      "order": 6
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-7757",
+      "repo": "sphinx-doc/sphinx",
+      "base_commit": "212fd67b9f0b4fae6a7c3501fdf1a9a5b2801329",
+      "difficulty": "15 min - 1 hour",
+      "order": 7
+    },
+    {
+      "instance_id": "astropy__astropy-13579",
+      "repo": "astropy/astropy",
+      "base_commit": "0df94ff7097961e92fd7812036a24b145bc13ca8",
+      "difficulty": "1-4 hours",
+      "order": 8
+    },
+    {
+      "instance_id": "psf__requests-1142",
+      "repo": "psf/requests",
+      "base_commit": "22623bd8c265b78b161542663ee980738441c307",
+      "difficulty": "<15 min fix",
+      "order": 9
+    },
+    {
+      "instance_id": "pytest-dev__pytest-8399",
+      "repo": "pytest-dev/pytest",
+      "base_commit": "6e7dc8bac831cd8cf7a53b08efa366bd84f0c0fe",
+      "difficulty": "15 min - 1 hour",
+      "order": 10
+    },
+    {
+      "instance_id": "sympy__sympy-16597",
+      "repo": "sympy/sympy",
+      "base_commit": "6fd65310fa3167b9626c38a5487e171ca407d988",
+      "difficulty": "1-4 hours",
+      "order": 11
+    }
+  ]
+}
