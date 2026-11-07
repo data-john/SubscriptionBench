@@ -203,7 +203,7 @@ def detect_external_use(
     prev_post: QuotaSnapshot,
     next_pre: QuotaSnapshot,
     watched_buckets: Iterable[str],
-    threshold: float = 1e-4,
+    threshold: float = 5e-4,
 ) -> list[str]:
     """Detect unexplained quota drops between attempts on watched buckets.
 
@@ -227,7 +227,7 @@ def check_idle(
     probe: QuotaProbe,
     watched_buckets: Iterable[str],
     idle_seconds: int,
-    threshold: float = 1e-4,
+    threshold: float = 5e-4,
     sleep_fn=time.sleep,
 ) -> tuple[QuotaSnapshot, QuotaSnapshot, list[str]]:
     """Probe for external activity by comparing two snapshots separated by idle_seconds."""

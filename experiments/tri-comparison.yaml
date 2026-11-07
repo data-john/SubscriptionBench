@@ -1,0 +1,32 @@
+# Tri-comparison: Flash Medium vs Flash High vs Argon High on the curated 6-task core suite.
+name: tri-comparison
+description: Tri-comparison of Flash Medium, Flash High, and Argon High on the 6-task core suite.
+suite: suites/verified-core-6.json
+agy_path: /home/john/.local/bin/agy
+passes: 1
+timeout_minutes: 60
+prompt_template: minimal-v1
+configs:
+  - label: efficient-flash-medium
+    role: efficient
+    model_id: gemini-3.8-flash-medium
+    buckets: [gemini-5h, gemini-weekly]
+  - label: capable-flash-high
+    role: default
+    model_id: gemini-3.8-flash-high
+    buckets: [gemini-5h, gemini-weekly]
+  - label: frontier-argon-high
+    role: capable
+    model_id: gemini-4-argon-high
+    buckets: [gemini-argon-wtu-weekly]
+quota:
+  max_weekly_fraction_per_config_cycle: 0.85  # Protect the final 15% reserve while guaranteeing full completion
+  external_use_threshold: 0.0005  # 0.05 pp tolerance for backend quota settling jitter
+  weekly_bucket_by_config:
+    efficient-flash-medium: gemini-weekly
+    capable-flash-high: gemini-weekly
+    frontier-argon-high: gemini-argon-wtu-weekly
+  primary_bucket_by_config:
+    efficient-flash-medium: gemini-5h
+    capable-flash-high: gemini-5h
+    frontier-argon-high: gemini-argon-wtu-weekly

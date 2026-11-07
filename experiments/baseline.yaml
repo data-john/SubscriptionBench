@@ -20,6 +20,8 @@ configs:
     model_id: gemini-4-argon-high
     buckets: [gemini-argon-wtu-weekly]
 quota:
+  max_weekly_fraction_per_config_cycle: 0.25  # Cap each config at 25 pp weekly spend (leaves >=20% Argon reserved)
+  external_use_threshold: 0.0005  # 0.05 pp tolerance for backend quota settling jitter
   weekly_bucket_by_config:
     default-argon-medium: gemini-argon-wtu-weekly
     efficient-flash-medium: gemini-weekly

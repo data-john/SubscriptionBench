@@ -15,6 +15,7 @@ configs:
     buckets: [gemini-5h, gemini-weekly]
 quota:
   idle_check_seconds: 15
+  external_use_threshold: 0.0005  # 0.05 pp tolerance for backend quota settling jitter
   weekly_bucket_by_config:
     efficient-flash-medium: gemini-weekly
   primary_bucket_by_config:

@@ -79,8 +79,8 @@ class QuotaPolicy(_Strict):
     max_weekly_fraction_per_config_cycle: float | None = Field(default=None, gt=0, le=1.0)
     idle_check_seconds: int = Field(default=120, ge=0)
     # An unexplained drop of more than this fraction between post(i) and pre(i+1) is
-    # recorded as external use.
-    external_use_threshold: float = Field(default=1e-4, ge=0)
+    # recorded as external use (0.05 pp tolerance for backend quota settling jitter).
+    external_use_threshold: float = Field(default=5e-4, ge=0)
     use_g1_credits: Literal[False] = False  # must stay off: no silent paid overage
 
     @model_validator(mode="after")
