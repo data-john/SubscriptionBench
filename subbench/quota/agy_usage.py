@@ -19,7 +19,7 @@ class AgyUsageProbe:
         host_agy_path: str = "/home/john/.local/bin/agy",
         volume_auth: str = "subbench-agy-auth",
         image_tag: str = "subbench-agy:probe",
-        timeout_seconds: int = 30,
+        timeout_seconds: int = 90,
     ) -> None:
         self.host_agy_path = host_agy_path
         self.volume_auth = volume_auth
