@@ -54,6 +54,39 @@ from subbench.store import connect, init_db
 
 logger = logging.getLogger(__name__)
 DEFAULT_DB = Path("data/subbench.sqlite")
+_SETTLE_5H_TO_WEEKLY_RATIO: dict[str, float] = {
+    "gemini-5h": 3.50,
+    "3p-5h": 2.00,
+}
+
+
+def _is_post_snapshot_settled(
+    snap_pre: QuotaSnapshot,
+    snap_post: QuotaSnapshot,
+    primary_bucket: str | None,
+    weekly_bucket: str | None,
+    *,
+    rel_tol: float = 0.08,
+) -> bool:
+    """Return True if 5h and weekly post-attempt burns look reconciled."""
+    if not primary_bucket or not weekly_bucket or primary_bucket == weekly_bucket:
+        return True
+    expected_ratio = _SETTLE_5H_TO_WEEKLY_RATIO.get(primary_bucket)
+    if expected_ratio is None:
+        return True
+    pre_5 = snap_pre.buckets.get(primary_bucket)
+    post_5 = snap_post.buckets.get(primary_bucket)
+    pre_w = snap_pre.buckets.get(weekly_bucket)
+    post_w = snap_post.buckets.get(weekly_bucket)
+    if not (pre_5 and post_5 and pre_w and post_w):
+        return True
+    d5 = pre_5.remaining_fraction - post_5.remaining_fraction
+    dw = pre_w.remaining_fraction - post_w.remaining_fraction
+    if d5 <= 1e-6:
+        return True
+    if dw <= 1e-6:
+        return False
+    return abs((d5 / dw) - expected_ratio) / expected_ratio <= rel_tol
 
 
 class DockerTaskEnvironment:
@@ -913,8 +946,8 @@ class Runner:
                         UPDATE attempts
                         SET state = 'HALTED', halt_reason = ?, exit_code = ?, finished_reason = ?,
                             wall_seconds = ?, num_turns = ?, input_tokens = ?, output_tokens = ?,
-                            thinking_tokens = ?, cache_read_tokens = ?, tool_calls = ?,
-                            error_text = ?, agy_version = ?, ended_at = ?
+                            thinking_tokens = ?, cache_read_tokens = ?, cache_write_tokens = ?,
+                            tool_calls = ?, error_text = ?, agy_version = ?, ended_at = ?
                         WHERE id = ?
                         """,
                         (
@@ -927,6 +960,7 @@ class Runner:
                             outcome.output_tokens,
                             outcome.thinking_tokens,
                             outcome.cache_read_tokens,
+                            outcome.cache_write_tokens,
                             outcome.tool_calls,
                             outcome.error_text,
                             outcome.agy_version_post or outcome.agy_version_pre,
@@ -985,8 +1019,34 @@ class Runner:
                 )
                 conn.commit()
 
-                # QUOTA_POST
+                # QUOTA_POST (with optional settling poll for 5h/weekly pre-auth lag)
                 snap_post = self.quota_probe.snapshot()
+                primary_b_id = self.manifest.quota.primary_bucket_by_config.get(config.label)
+                settle_max = self.manifest.quota.post_attempt_settle_seconds
+                settle_step = self.manifest.quota.post_attempt_settle_poll_seconds
+                if (
+                    settle_max > 0
+                    and snap_post.provenance != "manual"
+                    and not _is_post_snapshot_settled(
+                        snap_pre, snap_post, primary_b_id, weekly_bucket
+                    )
+                ):
+                    waited = 0
+                    while waited < settle_max:
+                        step = min(settle_step, settle_max - waited)
+                        logger.info(
+                            "Post-attempt quota appears unsettled on %s/%s; sleeping %ds to settle",
+                            primary_b_id,
+                            weekly_bucket,
+                            step,
+                        )
+                        self.sleep_fn(float(step))
+                        waited += step
+                        snap_post = self.quota_probe.snapshot()
+                        if _is_post_snapshot_settled(
+                            snap_pre, snap_post, primary_b_id, weekly_bucket
+                        ):
+                            break
                 save_quota_snapshot(
                     conn,
                     cycle_id=c_id,

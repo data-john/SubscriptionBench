@@ -97,9 +97,11 @@ def test_migration_progression_and_execution_mode():
         " VALUES (1, '/path', '1.0', 'linux', 'now')"
     )
 
-    # Run init_db to migrate to latest (v3)
+    # Run init_db to migrate to latest (v4)
     new_version = init_db(raw_conn)
-    assert new_version == SCHEMA_VERSION == 3
+    assert new_version == SCHEMA_VERSION == 4
+    attempt_cols = {r[1] for r in raw_conn.execute("PRAGMA table_info(attempts)")}
+    assert "cache_write_tokens" in attempt_cols
 
     # Check execution_mode added with default 'container'
     row = raw_conn.execute("SELECT execution_mode FROM environment WHERE id=1").fetchone()

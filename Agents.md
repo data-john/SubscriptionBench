@@ -31,7 +31,24 @@ Guidance for coding agents working in **SubscriptionBench**.
 
 ### AA Monthly Throughput Projections (`subbench aa project`)
 
-Subbench is used to calibrate the token-to-quota conversion rate (`Implied Pool $/mo` = `api_cost_usd / total_burn_frac × weeks_per_month`, pricing `uncached_input`, `cache_read`, and `output` tokens at AA list rates). `Projected Monthly Tasks` divides `Implied Pool $/mo` by AA's full-suite `cost_per_task` (`aa_ii_cost_per_task`), keeping throughput normalized to AA's suite rather than skewed to `verified-core-6`. Outputs are written to `artifacts/reports/aa_intelligence_vs_tasks_per_month.svg`, `aa_projections.{md,csv}`, and `aa_effort_projections.csv`.
+SubscriptionBench produces **two complementary monthly AA Intelligence Index task projections**:
+
+1. **Primary — Subbench-Calibrated Projection (`aa_projections.{md,csv}`, `aa_effort_projections.csv`, `aa_intelligence_vs_tasks_per_month.svg`)**:
+   - Does **not** depend on SWE-bench task difficulty; instead, full multi-turn Subbench runs measure the **actual end-to-end quota usage in `agy`/`codex`** (including real agent-harness/multi-turn overhead and cache behavior) relative to AA API list cost (`Implied Pool $/mo = api_cost_usd / total_burn_frac × weeks_per_month`, using net contiguous burn across valid attempts to net out inter-attempt recredits).
+   - `Projected Monthly AA Tasks` divides `Implied Pool $/mo` by AA's Intelligence Index v5 `cost_per_task` (`aa_ii_cost_per_task`).
+   - Visual error bars are omitted from the SVG by default (opt-in via `--show-ci`) because historical Cycles 4–10 pre-date post-attempt quota settling; numerical 95% CIs remain in `aa_projections.{md,csv}`.
+   - **Caveats:** `agy` does not separate `cache_write_tokens` from uncached input (~10–13% sensitivity on Anthropic models where `cache_write = 1.25×` input); weekly scaling (`× 4.33`) assumes full weekly pool utilization without 5h-cap waste; `codex-30d` quantizes remaining quota in 1% integer increments.
+
+2. **Alternative — Token-Weighted AA Projection (`aa_token_weighted_projections.{md,csv}`, `aa_token_weighted_vs_tasks_per_month.svg`)**:
+   - Uses synthetic 3-prompt calibrated quota weights `(w_in, w_cache, w_out)` from `subbench calibrate` (`artifacts/reports/quota_weight_calibration.json`) multiplied directly by AA's exact benchmark-weighted per-task token breakdown (`nonCacheInput + cacheWrite`, `cacheRead`, `output`) cached via `.venv/bin/subbench aa sync-tokens` (`data/cache/aa_token_usage.json`).
+   - Represents **theoretical token-only quota throughput** directly against the provider's meter (before `agy` multi-turn harness overhead).
+   - **Caveats:** AA per-task token breakdowns are parsed from AA's public model pages (not included in free AA API v2); models whose tiny synthetic `input_heavy` probe was masked by a background recredit (`efficient-flash-medium`, `hydrogen-medium`) fall back to `joint-fallback` weights; on Anthropic `sonnet-5-5-medium`, synthetic `w_cache` absorbs Anthropic's unseparated `1.25×` cache-write premium; `codex-30d` weights remain quantization-limited. The gap between Subbench (primary) and Token-Weighted (alternative) isolates real `agy` multi-turn harness overhead.
+
+```bash
+.venv/bin/subbench calibrate          # synthetic 3-prompt (w_in, w_cache, w_out) calibration
+.venv/bin/subbench aa sync-tokens     # fetch AA per-task token breakdowns into data/cache/aa_token_usage.json
+.venv/bin/subbench aa project         # regenerate primary Subbench + alternative Token-Weighted reports & SVGs
+```
 
 ### Antigravity (`agy`) Model & Quota Bucket Conventions
 

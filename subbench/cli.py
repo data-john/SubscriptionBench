@@ -382,6 +382,51 @@ def aa_list_cmd(
         typer.echo(f"  {m.slug:<34} {m.name:<34} intel={intel:<6} in={p_in:<7} out={p_out}")
 
 
+@aa_app.command("sync-tokens")
+def aa_sync_tokens_cmd(
+    suite: Annotated[
+        str | None, typer.Option(help="Filter Subbench suite_version to pick target slugs.")
+    ] = "verified-core-6",
+    slugs: Annotated[
+        str | None,
+        typer.Option(help="Optional comma-separated AA slugs (default: all projected variants)."),
+    ] = None,
+    cache_path: Annotated[Path, typer.Option(help="Cached AA JSON path.")] = Path(
+        "data/cache/aa_models_latest.json"
+    ),
+    token_usage_path: Annotated[
+        Path, typer.Option(help="Output cache path for AA per-task token breakdowns.")
+    ] = Path("data/cache/aa_token_usage.json"),
+    db: Annotated[Path, typer.Option(help="SQLite database path.")] = DEFAULT_DB,
+) -> None:
+    """Fetch per-task token/cost breakdowns from AA public model pages."""
+    from .aa import (
+        compute_aa_projections,
+        fetch_aa_token_breakdowns,
+        load_aa_cache,
+        project_effort_variants,
+    )
+
+    _, models = load_aa_cache(cache_path)
+    if slugs:
+        target_slugs = [s.strip() for s in slugs.split(",") if s.strip()]
+    else:
+        conn = connect(db)
+        init_db(conn)
+        summaries = compute_aa_projections(conn, models, suite_version=suite or None)
+        effort_pts = project_effort_variants(summaries, models)
+        target_slugs = sorted({p.aa_slug for p in effort_pts if p.aa_slug})
+
+    fetched_at, breakdowns = fetch_aa_token_breakdowns(
+        target_slugs, aa_models=models, cache_path=token_usage_path
+    )
+    matched = sum(1 for s in target_slugs if s.lower() in breakdowns)
+    typer.echo(
+        f"Synced AA per-task token breakdowns ({matched}/{len(target_slugs)} target slugs, "
+        f"{len(breakdowns)} total cached) at {fetched_at} -> {token_usage_path}"
+    )
+
+
 @aa_app.command("project")
 def aa_project_cmd(
     suite: Annotated[
@@ -393,6 +438,12 @@ def aa_project_cmd(
     cache_path: Annotated[Path, typer.Option(help="Cached AA JSON path.")] = Path(
         "data/cache/aa_models_latest.json"
     ),
+    token_usage_path: Annotated[
+        Path, typer.Option(help="Optional AA per-task token breakdown cache.")
+    ] = Path("data/cache/aa_token_usage.json"),
+    calibration_path: Annotated[
+        Path, typer.Option(help="Optional synthetic 3-prompt quota-weight calibration JSON.")
+    ] = Path("artifacts/reports/quota_weight_calibration.json"),
     out_dir: Annotated[
         Path, typer.Option(help="Output directory for AA projection reports.")
     ] = Path("artifacts/reports"),
@@ -403,14 +454,24 @@ def aa_project_cmd(
             help="Derive weekly burn from 5h / ratio (3.50 gemini, 2.00 3p) to avoid weekly lag.",
         ),
     ] = True,
+    show_ci: Annotated[
+        bool,
+        typer.Option(
+            "--show-ci/--no-show-ci",
+            help="Draw horizontal 95% CI error whiskers on measured points in the primary SVG.",
+        ),
+    ] = False,
     db: Annotated[Path, typer.Option(help="SQLite database path.")] = DEFAULT_DB,
 ) -> None:
     """Combine Subbench results with cached AA data to project monthly subscription capacity."""
     from .aa import (
         compute_aa_projections,
+        compute_token_weighted_projections,
         load_aa_cache,
+        load_aa_token_breakdowns,
         project_effort_variants,
         write_aa_projection_reports,
+        write_token_weighted_reports,
     )
 
     fetched_at, models = load_aa_cache(cache_path)
@@ -430,26 +491,141 @@ def aa_project_cmd(
         effort_points=effort_points,
         out_dir=out_dir,
         aa_fetched_at=fetched_at,
+        show_ci=show_ci,
     )
     typer.echo(
         f"Computed AA projections for {len(summaries)} configs "
         f"({len(effort_points)} effort points):"
     )
     for s in summaries:
-        pool_s = (
-            f"${s.implied_pool_usd_per_month:.0f}/mo"
-            if s.implied_pool_usd_per_month is not None
-            else "N/A"
-        )
+        if s.implied_pool_usd_per_month is not None:
+            pool_s = (
+                f"${s.implied_pool_usd_per_month:.2f}/mo"
+                if s.implied_pool_usd_per_month < 10.0
+                else f"${s.implied_pool_usd_per_month:.0f}/mo"
+            )
+        else:
+            pool_s = "N/A"
         tasks_s = (
-            f"{s.tasks_per_month_resolved:.0f} res/mo"
-            if s.tasks_per_month_resolved is not None
+            f"{s.tasks_per_month_attempted:.0f} AA tasks/mo"
+            if s.tasks_per_month_attempted is not None
             else "N/A"
         )
         typer.echo(
             f"  c{s.cycle_id} {s.config_label:<22} -> aa={s.aa_slug or 'NONE':<26} "
             f"pool={pool_s:<10} ({tasks_s})"
         )
+    for k, p in outputs.items():
+        typer.echo(f"  {k}: {p}")
+
+    # Alternative Token-Weighted projection when both AA token breakdowns & calibration exist
+    if token_usage_path.exists() and calibration_path.exists():
+        tok_fetched_at, breakdowns = load_aa_token_breakdowns(token_usage_path)
+        cal_payload = json.loads(calibration_path.read_text(encoding="utf-8"))
+        tw_points = compute_token_weighted_projections(effort_points, breakdowns, cal_payload)
+        if tw_points:
+            tw_out = write_token_weighted_reports(
+                tw_points,
+                out_dir=out_dir,
+                aa_fetched_at=fetched_at,
+                tokens_fetched_at=tok_fetched_at,
+            )
+            typer.echo(
+                f"Computed alternative Token-Weighted projections ({len(tw_points)} points):"
+            )
+            for k, p in tw_out.items():
+                typer.echo(f"  token_weighted_{k}: {p}")
+
+
+@app.command("calibrate")
+def calibrate_cmd(
+    models: Annotated[
+        str | None,
+        typer.Option(
+            help="Comma-separated calibration target labels (default: all measured models)."
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Print planned probes and prompt sizes without running."),
+    ] = False,
+    settle_seconds: Annotated[
+        int, typer.Option(help="Max post-probe settling wait seconds for 5h/weekly reconciliation.")
+    ] = 25,
+    timeout_seconds: Annotated[
+        int, typer.Option(help="Timeout per individual probe execution in seconds.")
+    ] = 300,
+    db: Annotated[Path, typer.Option(help="SQLite database path.")] = DEFAULT_DB,
+    cache_path: Annotated[Path, typer.Option(help="Cached AA JSON path.")] = Path(
+        "data/cache/aa_models_latest.json"
+    ),
+    out_dir: Annotated[Path, typer.Option(help="Output directory for calibration reports.")] = Path(
+        "artifacts/reports"
+    ),
+) -> None:
+    """Run synthetic 3-prompt quota-weight calibration and regress (w_in, w_cache, w_out)."""
+    from .aa import load_aa_cache
+    from .calibrate import (
+        DEFAULT_CALIBRATION_TARGETS,
+        build_calibration_prompt,
+        build_model_calibration_report,
+        run_calibration_for_target,
+        write_calibration_reports,
+    )
+
+    wanted = {m.strip() for m in models.split(",") if m.strip()} if models else None
+    targets = [t for t in DEFAULT_CALIBRATION_TARGETS if wanted is None or t.label in wanted]
+    if not targets:
+        avail = ", ".join(t.label for t in DEFAULT_CALIBRATION_TARGETS)
+        raise typer.BadParameter(f"No matching targets. Available: {avail}")
+
+    if dry_run:
+        typer.echo(f"Calibration dry-run ({len(targets)} targets):")
+        for t in targets:
+            sz_in = len(build_calibration_prompt("input_heavy", t, nonce="dryrun000001"))
+            sz_out = len(build_calibration_prompt("output_heavy", t, nonce="dryrun000001"))
+            sz_cch = len(build_calibration_prompt("cache_heavy", t, nonce="dryrun000001"))
+            typer.echo(
+                f"  {t.label:<24} agent={t.agent:<11} model={t.model_id} "
+                f"bucket={t.primary_bucket}->{t.weekly_bucket} "
+                f"prompt_bytes=({sz_in:,}/{sz_out:,}/{sz_cch:,}) "
+                f"repeats=({t.input_repeats}/{t.output_repeats}/{t.cache_repeats})"
+            )
+        return
+
+    aa_models = []
+    if cache_path.exists():
+        _, aa_models = load_aa_cache(cache_path)
+    conn = connect(db)
+    init_db(conn)
+
+    reports = []
+    for t in targets:
+        typer.echo(f"Calibrating {t.label} ({t.agent}: {t.model_id})...")
+        samples = run_calibration_for_target(
+            t, settle_max_seconds=settle_seconds, timeout_seconds=timeout_seconds
+        )
+        rep = build_model_calibration_report(t, samples, conn=conn, aa_models=aa_models)
+        reports.append(rep)
+        for s in samples:
+            typer.echo(
+                f"  [{s.probe_kind:<12}] in={s.uncached_input_tokens:>7,} "
+                f"cch={s.cache_read_tokens:>8,} out={s.output_tokens:>6,} "
+                f"burn={s.weekly_eq_burn_pp:.3f}pp(wk-eq) settled={s.settled} "
+                f"({s.wall_seconds:.1f}s)"
+            )
+        fit = rep.synthetic_fit
+        if fit:
+            typer.echo(
+                f"  -> syn fit: w_in={fit.w_in_pp_per_1m:.3f}, "
+                f"w_cache={fit.w_cache_pp_per_1m:.4f}, w_out={fit.w_out_pp_per_1m:.3f} pp/1M "
+                f"(out/in={fit.ratio_out_to_in or 0:.2f}x, "
+                f"cch/in={fit.ratio_cache_to_in or 0:.3f}x)"
+            )
+        # Checkpoint report after each model so partial progress is preserved
+        write_calibration_reports(reports, out_dir=out_dir)
+
+    outputs = write_calibration_reports(reports, out_dir=out_dir)
     for k, p in outputs.items():
         typer.echo(f"  {k}: {p}")
 

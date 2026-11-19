@@ -8,15 +8,21 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from subbench.aa import (
+    EffortProjectionPoint,
+    _compute_net_contiguous_burn,
     compute_aa_projections,
+    compute_token_weighted_projections,
     fetch_aa_models,
     load_aa_cache,
     match_aa_model,
+    parse_aa_model_page_token_breakdowns,
     parse_aa_models,
     project_effort_variants,
+    render_aa_intelligence_vs_tasks_svg,
     resolve_aa_api_key,
     store_aa_api_key_file,
     write_aa_projection_reports,
+    write_token_weighted_reports,
 )
 from subbench.cli import app
 from subbench.config import (
@@ -282,7 +288,7 @@ def test_compute_aa_projections_and_cli(tmp_path: Path) -> None:
     assert abs((s.api_cost_usd or 0) - 0.07) < 1e-6
     assert abs((s.implied_pool_usd_per_month or 0) - 7.0) < 1e-4
     # 7.0 / 0.08 (AA cost_per_task) = 87.5
-    assert abs((s.tasks_per_month_resolved or 0) - 87.5) < 1e-4
+    assert abs((s.tasks_per_month_attempted or 0) - 87.5) < 1e-4
 
     effort_pts = project_effort_variants(summaries, models)
     assert len(effort_pts) == 2
@@ -421,3 +427,218 @@ def test_5h_calibration_overrides_noisy_weekly(tmp_path: Path) -> None:
     s_raw = compute_aa_projections(conn, aa_models, use_5h_calibration=False)[0]
     assert abs(s_cal.weekly_burn_pp - 1.0) < 1e-6
     assert abs(s_raw.weekly_burn_pp - 0.5) < 1e-6
+    # Missing aa_ii_cost_per_task must not silently fall back to SWE-bench tasks/mo
+    assert s_cal.tasks_per_month_attempted is None
+
+
+def test_repeated_version_tokens_do_not_collide() -> None:
+    """claude-opus-5 must not match or project into claude-opus-5-5."""
+    models = parse_aa_models(
+        {
+            "data": [
+                {
+                    "slug": "claude-opus-5",
+                    "name": "Claude Opus 5 (Max)",
+                    "model_creator": {"name": "Anthropic"},
+                    "evaluations": {"artificial_analysis_intelligence_index": 44.2},
+                    "artificial_analysis_intelligence_index_cost": {
+                        "cost_per_task": {"total_cost": 5.0}
+                    },
+                    "pricing": {"price_1m_input_tokens": 4.0, "price_1m_output_tokens": 20.0},
+                },
+                {
+                    "slug": "claude-opus-5-5",
+                    "name": "Claude Opus 5.5 (Max)",
+                    "model_creator": {"name": "Anthropic"},
+                    "evaluations": {"artificial_analysis_intelligence_index": 59.1},
+                    "artificial_analysis_intelligence_index_cost": {
+                        "cost_per_task": {"total_cost": 10.0}
+                    },
+                    "pricing": {"price_1m_input_tokens": 4.0, "price_1m_output_tokens": 20.0},
+                },
+                {
+                    "slug": "claude-opus-5-5-medium",
+                    "name": "Claude Opus 5.5 (Medium)",
+                    "model_creator": {"name": "Anthropic"},
+                    "evaluations": {"artificial_analysis_intelligence_index": 48.2},
+                    "artificial_analysis_intelligence_index_cost": {
+                        "cost_per_task": {"total_cost": 2.5}
+                    },
+                    "pricing": {"price_1m_input_tokens": 4.0, "price_1m_output_tokens": 20.0},
+                },
+            ]
+        }
+    )
+
+    # Fallback matcher should never match opus-5-5 to opus-5 when opus-5-5 is absent
+    only_v5 = [m for m in models if m.slug == "claude-opus-5"]
+    assert match_aa_model("claude-opus-5-5-medium", None, only_v5) is None
+
+    # Fallback matcher with only bare opus-5-5 + opus-5 picks opus-5-5, not opus-5
+    no_med = [m for m in models if m.slug != "claude-opus-5-5-medium"]
+    matched = match_aa_model("claude-opus-5-5-medium", None, no_med)
+    assert matched is not None and matched.slug == "claude-opus-5-5"
+
+    # Effort projection for opus-5-5 excludes claude-opus-5
+    from subbench.aa import SubbenchConfigCostSummary
+
+    summary = SubbenchConfigCostSummary(
+        cycle_id=11,
+        config_label="opus-5-5-medium",
+        model_id="claude-opus-5-5-medium",
+        effort=None,
+        agent="antigravity",
+        weekly_bucket="3p-weekly",
+        resolved_valid=5,
+        attempted_valid=6,
+        weekly_burn_pp=25.0,
+        uncached_input_tokens=100_000,
+        cache_read_tokens=1_000_000,
+        output_tokens=20_000,
+        aa_slug="claude-opus-5-5-medium",
+        aa_name="Claude Opus 5.5 (Medium)",
+        aa_intelligence=48.2,
+        aa_ii_cost_per_task=2.5,
+        aa_price_1m_in=4.0,
+        aa_price_1m_out=20.0,
+        aa_price_1m_cache=0.2,
+        api_cost_usd=1.0,
+        implied_pool_usd_per_week=4.0,
+        implied_pool_usd_per_month=20.0,
+        tasks_per_month_attempted=8.0,
+    )
+    pts = project_effort_variants([summary], models)
+    slugs = {p.aa_slug for p in pts}
+    assert slugs == {"claude-opus-5-5-medium", "claude-opus-5-5"}
+
+
+def test_net_contiguous_burn_handles_recredits_resets_and_gaps() -> None:
+    # 1. Contiguous attempts with an inter-attempt recredit (+0.0021)
+    rows_recredit = [
+        (1, 10, 1, 1.0000, 0.9792, "2026-11-19T18:00Z", "2026-11-19T18:00Z"),
+        (2, 10, 1, 0.9813, 0.9645, "2026-11-19T18:00Z", "2026-11-19T18:00Z"),
+    ]
+    # Net burn = 1.0000 - 0.9645 = 0.0355 (not 0.0208 + 0.0168 = 0.0376)
+    assert abs(_compute_net_contiguous_burn(rows_recredit, 10) - 0.0355) < 1e-9
+
+    # 2. Bucket reset between attempts must break segment (not count as recredit)
+    rows_reset = [
+        (1, 10, 1, 0.30, 0.25, "2026-11-19T12:00Z", "2026-11-19T12:00Z"),
+        (2, 10, 1, 1.00, 0.95, "2026-11-19T17:00Z", "2026-11-19T17:00Z"),
+    ]
+    assert abs(_compute_net_contiguous_burn(rows_reset, 10) - 0.10) < 1e-9
+
+    # 3. Invalid attempt in between breaks segment
+    rows_invalid = [
+        (1, 10, 1, 0.90, 0.85, "2026-11-19T18:00Z", "2026-11-19T18:00Z"),
+        (2, 10, 0, 0.85, 0.70, "2026-11-19T18:00Z", "2026-11-19T18:00Z"),
+        (3, 10, 1, 0.70, 0.65, "2026-11-19T18:00Z", "2026-11-19T18:00Z"),
+    ]
+    assert abs(_compute_net_contiguous_burn(rows_invalid, 10) - 0.10) < 1e-9
+
+
+def test_svg_supports_sub_unit_tasks_per_month() -> None:
+    pts = [
+        EffortProjectionPoint(
+            family_key="opus@3p-weekly",
+            family_label="Claude Opus 5.5",
+            effort="ultra",
+            aa_slug="claude-opus-5-5-ultra",
+            aa_name="Claude Opus 5.5 (Ultra)",
+            weekly_bucket="3p-weekly",
+            measured=False,
+            source_cycle_id=11,
+            source_config_label="opus-5-5-medium",
+            aa_intelligence=62.0,
+            aa_ii_cost_per_task=40.0,
+            tasks_per_month_attempted=0.4,
+            measured_resolve_rate=None,
+        ),
+        EffortProjectionPoint(
+            family_key="opus@3p-weekly",
+            family_label="Claude Opus 5.5",
+            effort="medium",
+            aa_slug="claude-opus-5-5-medium",
+            aa_name="Claude Opus 5.5 (Medium)",
+            weekly_bucket="3p-weekly",
+            measured=True,
+            source_cycle_id=11,
+            source_config_label="opus-5-5-medium",
+            aa_intelligence=48.2,
+            aa_ii_cost_per_task=2.5,
+            tasks_per_month_attempted=8.0,
+            measured_resolve_rate=0.83,
+            tasks_mo_ci_low=7.0,
+            tasks_mo_ci_high=9.0,
+        ),
+    ]
+    svg_default = render_aa_intelligence_vs_tasks_svg(pts)
+    assert ">0.5</text>" in svg_default
+    assert "Opus 5.5 (Medium)" in svg_default
+    assert "95% CI (measured)" not in svg_default
+
+    svg_ci = render_aa_intelligence_vs_tasks_svg(pts, show_ci=True)
+    assert "95% CI (measured)" in svg_ci
+
+
+def test_parse_aa_token_breakdowns_and_token_weighted_projection(tmp_path: Path) -> None:
+    fake_html = (
+        r'{"slug":"gemini-4-neon-high","name":"Gemini 4 Neon (High)",'
+        r'"shortName":"Gemini 4 Neon (high)",'
+        r'"modelFamily":{"slug":"gemini-4-neon","name":"Gemini 4 Neon"},'
+        r'"price1mInputTokens":3,"price1mOutputTokens":15,"cacheHitPrice":0.15,'
+        r'"intelligenceIndexCostPerTask":{"cost":{"total":6.4448,'
+        r'"nonCacheInput":0.064428,"cacheWrite":2.594639,"cacheRead":1.661309,'
+        r'"output":2.124462,"reasoning":1.20755,"answer":0.916912}},'
+        r'"canonicalIntelligenceIndexTokenCount":{"input":8118042892,"output":282710380}}'
+    )
+    bds = parse_aa_model_page_token_breakdowns(fake_html)
+    assert "gemini-4-neon-high" in bds
+    assert "gemini-4-neon" not in bds
+    bd = bds["gemini-4-neon-high"]
+    assert abs(bd.output_tokens_per_task - (2.124462 / 15.0) * 1e6) < 1.0
+    assert abs(bd.cache_read_tokens_per_task - (1.661309 / 0.15) * 1e6) < 1.0
+    assert bd.canonical_input_tokens == 8118042892
+
+    eff_pt = EffortProjectionPoint(
+        family_key="gemini-4-neon@gemini-weekly",
+        family_label="Gemini 4 Neon",
+        effort="high",
+        aa_slug="gemini-4-neon-high",
+        aa_name="Gemini 4 Neon (High)",
+        weekly_bucket="gemini-weekly",
+        measured=False,
+        source_cycle_id=9,
+        source_config_label="neon-medium",
+        aa_intelligence=59.6,
+        aa_ii_cost_per_task=6.4448,
+        tasks_per_month_attempted=45.4,
+        measured_resolve_rate=None,
+    )
+    cal = {
+        "models": [
+            {
+                "target": {
+                    "model_id": "gemini-4-neon-medium",
+                    "effort": None,
+                    "weekly_bucket": "gemini-weekly",
+                },
+                "aa_slug": "gemini-4-neon-medium",
+                "synthetic_fit": {
+                    "n_samples": 3,
+                    "w_in_pp_per_1m": 2.857143,
+                    "w_cache_pp_per_1m": 0.3011,
+                    "w_out_pp_per_1m": 14.285714,
+                },
+            }
+        ]
+    }
+    tw_pts = compute_token_weighted_projections([eff_pt], bds, cal)
+    assert len(tw_pts) == 1
+    # Expected ~54.9 AA tasks/mo (433 / 7.89 pp/task)
+    assert 54.0 < tw_pts[0].token_weighted_tasks_per_month < 56.0
+    assert tw_pts[0].weight_source == "synthetic-3p"
+
+    out = write_token_weighted_reports(tw_pts, out_dir=tmp_path)
+    assert out["md"].exists() and out["csv"].exists() and out["svg"].exists()
+    assert "Token-Weighted" in out["svg"].read_text(encoding="utf-8")

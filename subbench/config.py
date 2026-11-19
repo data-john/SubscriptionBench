@@ -87,6 +87,10 @@ class QuotaPolicy(_Strict):
     # An unexplained drop of more than this fraction between post(i) and pre(i+1) is
     # recorded as external use (0.05 pp tolerance for backend quota settling jitter).
     external_use_threshold: float = Field(default=5e-4, ge=0)
+    # Post-attempt settling poll window when 5h and weekly quota deltas disagree
+    # (e.g., flat 1pp/3pp pre-auth reservations before backend reconciliation).
+    post_attempt_settle_seconds: int = Field(default=20, ge=0)
+    post_attempt_settle_poll_seconds: int = Field(default=5, ge=1)
     use_g1_credits: Literal[False] = False  # must stay off: no silent paid overage
 
     @model_validator(mode="after")

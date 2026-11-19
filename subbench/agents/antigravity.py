@@ -116,6 +116,14 @@ def parse_stream_json(lines: Iterable[str]) -> StreamSummary:
             summary.output_tokens = usage.get("output_tokens")
             summary.thinking_tokens = usage.get("thinking_tokens")
             summary.cache_read_tokens = usage.get("cache_read_tokens")
+            for cw_key in (
+                "cache_write_tokens",
+                "cache_creation_tokens",
+                "cache_creation_input_tokens",
+            ):
+                if usage.get(cw_key) is not None:
+                    summary.cache_write_tokens = int(usage[cw_key])
+                    break
             summary.total_tokens = usage.get("total_tokens")
 
             err_text = str(res.get("error") or res.get("response") or "")
@@ -352,4 +360,5 @@ class AntigravityAdapter:
             tool_calls=summary.tool_calls,
             events=summary.events,
             error_text=summary.error_text or error_text,
+            cache_write_tokens=summary.cache_write_tokens,
         )

@@ -191,6 +191,11 @@ MIGRATIONS: list[str] = [
     ALTER TABLE quota_snapshots_v3 RENAME TO quota_snapshots;
     CREATE INDEX quota_by_attempt ON quota_snapshots (attempt_id, phase, bucket_id);
     """,
+    # --- v4 ---
+    """
+    ALTER TABLE attempts
+        ADD COLUMN cache_write_tokens INTEGER;
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

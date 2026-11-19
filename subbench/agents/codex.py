@@ -75,6 +75,8 @@ def parse_codex_jsonl(lines: Iterable[str]) -> StreamSummary:
 
     in_tokens = 0
     cached_tokens = 0
+    cache_write_tokens = 0
+    has_cache_write = False
     out_tokens = 0
     has_usage = False
 
@@ -106,6 +108,9 @@ def parse_codex_jsonl(lines: Iterable[str]) -> StreamSummary:
                 t_in = int(usage.get("input_tokens") or 0)
                 t_cached = int(usage.get("cached_input_tokens") or 0)
                 t_out = int(usage.get("output_tokens") or 0)
+                if usage.get("cache_write_input_tokens") is not None:
+                    has_cache_write = True
+                    cache_write_tokens += int(usage.get("cache_write_input_tokens") or 0)
                 in_tokens += t_in
                 cached_tokens += t_cached
                 out_tokens += t_out
@@ -154,6 +159,7 @@ def parse_codex_jsonl(lines: Iterable[str]) -> StreamSummary:
     if has_usage:
         summary.input_tokens = in_tokens
         summary.cache_read_tokens = cached_tokens
+        summary.cache_write_tokens = cache_write_tokens if has_cache_write else None
         summary.output_tokens = out_tokens
         summary.total_tokens = in_tokens + out_tokens
 
@@ -418,4 +424,5 @@ class CodexAdapter:
             tool_calls=summary.tool_calls,
             events=summary.events,
             error_text=summary.error_text or error_text,
+            cache_write_tokens=summary.cache_write_tokens,
         )

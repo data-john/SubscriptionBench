@@ -128,7 +128,7 @@ Each benchmark run produces a reproducible dataset and a concise summary report 
 ## Development
 
 * Plan: [`docs/implementation_plan.md`](docs/implementation_plan.md). Phase 0/3 results: [`docs/phase0_findings.md`](docs/phase0_findings.md). Next-batch handover (Phases 3–6 fixes + Phases 7–8): [`docs/handover_phases7_8.md`](docs/handover_phases7_8.md).
-* Requires Python 3.12 (`.venv/`) and Docker (task containers, suite validation, and grading).
+* Requires Python 3.12 (`.venv/`, bootstrapped via `uv sync --group suite` or `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"`) and Docker (task containers, suite validation, and grading).
 
 ```bash
 .venv/bin/pytest                             # offline unit tests (0% quota burn)
@@ -145,5 +145,7 @@ Each benchmark run produces a reproducible dataset and a concise summary report 
 .venv/bin/subbench grade --cycle-id <id>
 .venv/bin/subbench audit --cycle-id <id>
 .venv/bin/subbench report --cycle-id <id>    # Phase 7: Markdown, CSV/Parquet, SVG charts
-.venv/bin/subbench aa project             # AA throughput projections: Implied Pool $/mo / AA Cost/Task
+.venv/bin/subbench calibrate                 # Synthetic 3-prompt (w_in, w_cache, w_out) calibration
+.venv/bin/subbench aa sync-tokens            # Cache AA per-task token breakdowns (for token-weighted view)
+.venv/bin/subbench aa project                # Primary Subbench + alternative Token-Weighted AA projections & SVGs
 ```
