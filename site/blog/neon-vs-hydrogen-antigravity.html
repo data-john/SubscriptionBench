@@ -292,6 +292,7 @@
       const EFFORT_LABEL = { low: "Low", medium: "Medium", high: "High", xhigh: "xHigh", max: "Max" };
       const FRIENDLY_POOL = {
         "gemini-weekly": "Google AI Pro (Gemini)",
+        "gemini-argon-wtu-weekly": "Google AI Pro (Argon Pool)",
         "3p-weekly": "Google AI Pro (Claude Bonus)",
       };
       let cachedData = null;
@@ -324,7 +325,7 @@
         if (!cachedData || typeof Plotly === "undefined") return;
         const colors = getThemeColors();
         const pts = cachedData.projections.filter(
-          (p) => p.era === "current" && p.weekly_bucket !== "codex-30d"
+          (p) => p.weekly_bucket !== "codex-30d"
         );
         const families = new Map();
         for (const p of pts) {

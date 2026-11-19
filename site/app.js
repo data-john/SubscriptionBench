@@ -3,7 +3,7 @@
 
   const FRIENDLY_POOL = {
     "gemini-weekly": "Google AI Pro (Gemini)",
-    "gemini-argon-wtu-weekly": "Google AI Pro (Legacy Argon)",
+    "gemini-argon-wtu-weekly": "Google AI Pro (Argon Pool)",
     "3p-weekly": "Google AI Pro (Claude Bonus)",
     "codex-30d": "Codex Free",
   };
@@ -25,6 +25,8 @@
     "gemini-4-neon@gemini-weekly:medium",
     "gemini-4-neon@gemini-weekly:high",
     "gemini-4-neon@gemini-weekly:xhigh",
+    "gemini-3.8-flash@gemini-weekly:medium",
+    "gemini-4-argon@gemini-argon-wtu-weekly:high",
     "claude-sonnet-5-5@3p-weekly:medium",
     "claude-opus-5-5@3p-weekly:medium",
     "gpt-6-luna@codex-30d:high",
@@ -64,8 +66,7 @@
   function friendlyMeasuredName(r) {
     const clean = (r.aa_name || r.config_label).replace(", Default Fallback", "");
     const suffix = r.weekly_bucket === "codex-30d" ? " · Codex Free" : "";
-    const eraTag = r.era === "nov7" ? " (Nov 7)" : "";
-    return `${clean}${eraTag}${suffix}`;
+    return `${clean}${suffix}`;
   }
 
   function applyConfigLinks() {
@@ -181,7 +182,7 @@
       if (isCodex) {
         return state.includeCodexFree && state.era !== "nov7";
       }
-      if (state.era === "current" && p.era !== "current") return false;
+      // Nov 7 baseline only had Flash and Argon; Today includes all available Antigravity models
       if (state.era === "nov7" && p.era !== "nov7") return false;
       if (
         state.scope === "gemini" &&
@@ -213,8 +214,6 @@
       const legendName =
         sorted[0].weekly_bucket === "codex-30d"
           ? `${famLabel} (Codex Free)`
-          : isNov7
-          ? `${famLabel} (Nov 7)`
           : famLabel;
 
       if (state.showCurves && sorted.length > 1) {
@@ -228,10 +227,10 @@
           y: sorted.map((r) => r.aa_intelligence),
           line: {
             color: famColor,
-            width: isNov7 ? 1.5 : 2,
-            dash: isNov7 ? "dot" : "solid",
+            width: isNov7 && state.era === "compare" ? 1.5 : 2,
+            dash: isNov7 && state.era === "compare" ? "dot" : "solid",
           },
-          opacity: isNov7 && state.era === "compare" ? 0.5 : 0.72,
+          opacity: isNov7 && state.era === "compare" ? 0.6 : 0.78,
           hoverinfo: "skip",
         });
       }
@@ -426,8 +425,6 @@
       );
       if (state.barFilter === "defaults") {
         rows = rows.filter((r) => KEY_MODEL_IDS.has(r.id));
-      } else if (state.barFilter === "current") {
-        rows = rows.filter((r) => r.era === "current");
       }
 
       rows.sort((a, b) => a.tasks_per_month_primary - b.tasks_per_month_primary);
@@ -436,9 +433,8 @@
       chartEl.style.minHeight = `${height}px`;
 
       const labels = rows.map((r) => {
-        const eraTag = r.era === "nov7" ? " (Nov 7)" : "";
         const planTag = r.weekly_bucket === "codex-30d" ? " · Free" : "";
-        return `${r.family_label} (${friendlyEffort(r.effort)})${eraTag}${planTag}`;
+        return `${r.family_label} (${friendlyEffort(r.effort)})${planTag}`;
       });
       const values = rows.map((r) => r.tasks_per_month_primary);
 
@@ -449,7 +445,7 @@
         x: values,
         marker: {
           color: rows.map((r) => r.color),
-          opacity: rows.map((r) => (r.era === "nov7" ? 0.6 : 0.92)),
+          opacity: 0.92,
         },
         text: rows.map(
           (r) => `~${fmtInt(r.tasks_per_month_primary)} tasks  (Intel ${fmtNum(r.aa_intelligence, 1)})`
@@ -538,7 +534,7 @@
         x: values,
         marker: {
           color: rows.map(famColorFor),
-          opacity: rows.map((r) => (r.era === "nov7" ? 0.6 : 0.92)),
+          opacity: 0.92,
         },
         text: rows.map((r) => {
           const v = r.implied_pool_usd_per_month;
