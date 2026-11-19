@@ -1,0 +1,23 @@
+# Free Codex subscription: GPT-6 Luna (High) on the curated 6-task core suite.
+name: codex-free-luna-high
+description: Free Codex subscription (gpt-6-luna, high effort) on the 6-task core suite.
+agent: codex
+suite: suites/verified-core-6.json
+codex_path: /usr/lib/chatgpt/resources/codex
+passes: 1
+timeout_minutes: 60
+prompt_template: minimal-v1
+configs:
+  - label: gpt-6-luna-high
+    role: default
+    model_id: gpt-6-luna
+    effort: high
+    buckets: [codex-30d]
+quota:
+  idle_check_seconds: 15
+  max_weekly_fraction_per_config_cycle: 0.85  # Allow full completion up to exhaustion
+  external_use_threshold: 0.005  # 0.5 pp tolerance (codex reports integer percentage points)
+  weekly_bucket_by_config:
+    gpt-6-luna-high: codex-30d
+  primary_bucket_by_config:
+    gpt-6-luna-high: codex-30d

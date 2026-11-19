@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import subprocess
 import time
-from collections.abc import Iterable
+import uuid
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
@@ -30,7 +32,7 @@ class QuotaSnapshot:
 
     buckets: dict[str, BucketReading]
     taken_at: str  # ISO-8601 UTC
-    provenance: Literal["agy_usage", "manual"]
+    provenance: Literal["agy_usage", "codex_usage", "manual"]
     raw_json: str
 
 
@@ -271,3 +273,46 @@ def save_quota_snapshot(
             ),
         )
     conn.commit()
+
+
+def probe_container_name(prefix: str) -> str:
+    """Return a unique Docker container name for a one-shot quota probe."""
+    return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+
+def force_remove_container(container_name: str, *, timeout: int = 15) -> None:
+    """Best-effort `docker rm -f <container_name>` to clean up timed-out probes."""
+    try:
+        subprocess.run(
+            ["docker", "rm", "-f", container_name],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Ignoring failure removing probe container %s: %s", container_name, exc)
+
+
+def run_with_timeout_retries[T](
+    fn: Callable[[], T],
+    *,
+    retries: int,
+    label: str,
+) -> T:
+    """Invoke `fn`, retrying on TimeoutError / subprocess.TimeoutExpired."""
+    total_attempts = max(0, retries) + 1
+    for attempt in range(total_attempts):
+        try:
+            return fn()
+        except (TimeoutError, subprocess.TimeoutExpired) as exc:
+            if attempt + 1 >= total_attempts:
+                raise
+            logger.warning(
+                "%s timed out (attempt %d/%d): %s; retrying",
+                label,
+                attempt + 1,
+                total_attempts,
+                exc,
+            )
+    raise AssertionError("unreachable")  # pragma: no cover

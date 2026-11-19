@@ -17,14 +17,20 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 NonEmpty = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
 
-# Quota bucket ids observed from `agy -p /usage --output-format json` (Phase 0).
+# Quota bucket ids observed from `agy -p /usage --output-format json` (Phase 0)
+# and `codex app-server` `account/rateLimits/read`.
 KNOWN_BUCKETS = (
     "gemini-5h",
     "gemini-weekly",
     "gemini-argon-wtu-weekly",
     "3p-5h",
     "3p-weekly",
+    "codex-5h",
+    "codex-weekly",
+    "codex-30d",
 )
+
+AgentKind = Literal["antigravity", "codex"]
 
 
 class _Strict(BaseModel):
@@ -55,7 +61,7 @@ class ConfigSpec(_Strict):
     model_id: NonEmpty
     # Buckets this model draws from (verified in Phase 0); used by the quota analysis.
     buckets: list[NonEmpty] = Field(min_length=1)
-    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+    effort: Literal["low", "medium", "high", "xhigh", "max", "ultra"] | None = None
     max_passes: int | None = Field(
         default=None, ge=1, description="Optional cap on executed passes for this config."
     )
@@ -105,8 +111,12 @@ class ExperimentManifest(_Strict):
 
     name: NonEmpty
     description: str = ""
+    agent: AgentKind = "antigravity"
     suite: NonEmpty = Field(description="Path to a pinned suite JSON, relative to repo root.")
-    agy_path: NonEmpty = Field(description="Absolute path to the agy binary.")
+    agy_path: NonEmpty | None = Field(default=None, description="Absolute path to the agy binary.")
+    codex_path: NonEmpty | None = Field(
+        default=None, description="Absolute path to the codex binary."
+    )
     configs: list[ConfigSpec] = Field(min_length=1)
     passes: int = Field(default=1, ge=1, description="k: full passes over all configs.")
     timeout_minutes: int = Field(default=45, ge=1)
@@ -116,13 +126,30 @@ class ExperimentManifest(_Strict):
         default=None, ge=1, description="Run only the first N suite tasks (pilot)."
     )
 
+    @property
+    def binary_path(self) -> str:
+        """Return the configured host binary path for the selected agent."""
+        if self.agent == "codex":
+            assert self.codex_path is not None
+            return self.codex_path
+        assert self.agy_path is not None
+        return self.agy_path
+
     @model_validator(mode="after")
     def _validate(self) -> ExperimentManifest:
         labels = [c.label for c in self.configs]
         if len(set(labels)) != len(labels):
             raise ValueError("config labels must be unique")
-        if not Path(self.agy_path).is_absolute():
-            raise ValueError("agy_path must be absolute (agy may not be on PATH)")
+        if self.agent == "antigravity":
+            if not self.agy_path:
+                raise ValueError("agy_path is required when agent='antigravity'")
+            if not Path(self.agy_path).is_absolute():
+                raise ValueError("agy_path must be absolute (agy may not be on PATH)")
+        elif self.agent == "codex":
+            if not self.codex_path:
+                raise ValueError("codex_path is required when agent='codex'")
+            if not Path(self.codex_path).is_absolute():
+                raise ValueError("codex_path must be absolute (codex may not be on PATH)")
         configs_by_label = {c.label: c for c in self.configs}
 
         unknown_primary = set(self.quota.primary_bucket_by_config) - set(labels)

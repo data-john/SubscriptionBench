@@ -24,6 +24,14 @@ DEFAULT_EGRESS_ALLOWLIST: frozenset[str] = frozenset(
     }
 )
 
+CODEX_EGRESS_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "chatgpt.com",
+        "auth.openai.com",
+        "api.openai.com",
+    }
+)
+
 
 def network_exists(name: str) -> bool:
     res = subprocess.run(
@@ -187,6 +195,9 @@ def launch_task_container(
     proxy_env: dict[str, str],
     volume_auth: str = "subbench-agy-auth",
     host_agy_path: str = "/home/john/.local/bin/agy",
+    state_mount: str = "/agy-state",
+    container_bin_path: str = "/usr/local/bin/agy",
+    extra_ro_mounts: dict[str, str] | None = None,
 ) -> str:
     """Launch a task container attached exclusively to subbench-internal with proxy configured."""
     ensure_networks()
@@ -202,10 +213,13 @@ def launch_task_container(
         "--network",
         NETWORK_INTERNAL,
         "-v",
-        f"{volume_auth}:/agy-state",
+        f"{volume_auth}:{state_mount}",
         "-v",
-        f"{host_agy_path}:/usr/local/bin/agy:ro",
+        f"{host_agy_path}:{container_bin_path}:ro",
     ]
+    if extra_ro_mounts:
+        for host_src, container_dst in extra_ro_mounts.items():
+            cmd.extend(["-v", f"{host_src}:{container_dst}:ro"])
     for k, v in proxy_env.items():
         cmd.extend(["-e", f"{k}={v}"])
 

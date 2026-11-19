@@ -548,3 +548,90 @@ def test_runner_pre_attempt_5h_exhaustion(tmp_path: Path):
     assert len(slept) == 1
     # Only 1 provision occurred because pre-attempt check prevented provisioning when exhausted!
     assert provision_count == 1
+
+
+def test_runner_scopes_validity_to_primary_bucket_ignoring_weekly_jitter(tmp_path: Path):
+    """Verify weekly backend settling jitter does not invalidate clean 5h attempts."""
+    cfg_eff = ConfigSpec(
+        label="efficient-flash",
+        role=ConfigRole.EFFICIENT,
+        model_id="gemini-3.8-flash",
+        buckets=["gemini-5h", "gemini-weekly"],
+    )
+    m_path, _ = _make_dummy_manifest_and_suite(
+        tmp_path,
+        task_limit=2,
+        passes=1,
+        configs=[cfg_eff],
+        quota={
+            "primary_bucket_by_config": {"efficient-flash": "gemini-5h"},
+            "weekly_bucket_by_config": {"efficient-flash": "gemini-weekly"},
+            "idle_check_seconds": 0,
+            "external_use_threshold": 0.0005,
+        },
+    )
+    db_path = tmp_path / "test.db"
+
+    # Attempt 1: 5h drops 0.80 -> 0.70 (clean), while weekly ticks UP 0.900 -> 0.903
+    # Inter-attempt gap: 5h stays 0.70 (clean), while weekly ticks DOWN 0.903 -> 0.900
+    # Attempt 2: 5h drops 0.70 -> 0.60 (clean), weekly ticks 0.900 -> 0.880
+    snaps = [
+        QuotaSnapshot(
+            buckets={
+                "gemini-5h": BucketReading("gemini-5h", "5h", 0.80, "2026-11-01T15:00:00Z"),
+                "gemini-weekly": BucketReading("gemini-weekly", "weekly", 0.900),
+            },
+            taken_at="2026-11-01T10:00:00Z",
+            provenance="manual",
+            raw_json="{}",
+        ),
+        QuotaSnapshot(
+            buckets={
+                "gemini-5h": BucketReading("gemini-5h", "5h", 0.70, "2026-11-01T15:00:00Z"),
+                "gemini-weekly": BucketReading("gemini-weekly", "weekly", 0.903),
+            },
+            taken_at="2026-11-01T10:05:00Z",
+            provenance="manual",
+            raw_json="{}",
+        ),
+        QuotaSnapshot(
+            buckets={
+                "gemini-5h": BucketReading("gemini-5h", "5h", 0.70, "2026-11-01T15:00:00Z"),
+                "gemini-weekly": BucketReading("gemini-weekly", "weekly", 0.900),
+            },
+            taken_at="2026-11-01T10:06:00Z",
+            provenance="manual",
+            raw_json="{}",
+        ),
+        QuotaSnapshot(
+            buckets={
+                "gemini-5h": BucketReading("gemini-5h", "5h", 0.60, "2026-11-01T15:00:00Z"),
+                "gemini-weekly": BucketReading("gemini-weekly", "weekly", 0.880),
+            },
+            taken_at="2026-11-01T10:11:00Z",
+            provenance="manual",
+            raw_json="{}",
+        ),
+    ]
+
+    runner = Runner(
+        manifest_path=m_path,
+        db_path=db_path,
+        quota_probe=FakeQuotaProbe(snapshots=snaps),
+        adapter_factory=lambda cfg: FakeAgentAdapter(halt_reason="completed"),
+        provisioner=FakeProvisioner(),
+        skip_idle_check=True,
+        artifacts_dir=tmp_path / "artifacts",
+    )
+
+    cycle_id = runner.run()
+    conn = connect(db_path)
+    rows = conn.execute(
+        "SELECT valid, invalid_reason FROM attempts WHERE cycle_id = ? ORDER BY id",
+        (cycle_id,),
+    ).fetchall()
+    assert len(rows) == 2
+    assert all(r["valid"] == 1 and r["invalid_reason"] is None for r in rows)
+
+    flags = conn.execute("SELECT flags_json FROM cycles WHERE id = ?", (cycle_id,)).fetchone()[0]
+    assert "external_use:gemini-weekly" not in flags

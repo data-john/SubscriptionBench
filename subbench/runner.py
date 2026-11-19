@@ -16,6 +16,7 @@ from typing import Any
 
 from subbench.agents.antigravity import AntigravityAdapter
 from subbench.agents.base import AgentAdapter, AttemptOutcome
+from subbench.agents.codex import CodexAdapter
 from subbench.agents.prompts import TEMPLATES, render_prompt
 from subbench.config import (
     ConfigSpec,
@@ -32,6 +33,7 @@ from subbench.provision.capture import (
 )
 from subbench.provision.images import build_overlay_image
 from subbench.provision.network import (
+    CODEX_EGRESS_ALLOWLIST,
     DEFAULT_EGRESS_ALLOWLIST,
     EgressProxyManager,
     launch_task_container,
@@ -40,6 +42,7 @@ from subbench.provision.workspace import prepare_workspace
 from subbench.quota import (
     AgyUsageProbe,
     BucketReading,
+    CodexUsageProbe,
     QuotaProbe,
     QuotaSnapshot,
     check_idle,
@@ -99,10 +102,24 @@ class DockerProvisioner:
     def __init__(
         self,
         host_agy_path: str = "/home/john/.local/bin/agy",
-        allowlist: set[str] | frozenset[str] = DEFAULT_EGRESS_ALLOWLIST,
+        allowlist: set[str] | frozenset[str] | None = None,
+        agent_kind: str = "antigravity",
+        volume_auth: str | None = None,
+        state_mount: str | None = None,
+        container_bin_path: str | None = None,
     ) -> None:
         self.host_agy_path = host_agy_path
-        self.allowlist = set(allowlist)
+        self.agent_kind = agent_kind
+        if agent_kind == "codex":
+            self.allowlist = set(allowlist or CODEX_EGRESS_ALLOWLIST)
+            self.volume_auth = volume_auth or "subbench-codex-auth"
+            self.state_mount = state_mount or "/codex-state"
+            self.container_bin_path = container_bin_path or "/usr/local/bin/codex"
+        else:
+            self.allowlist = set(allowlist or DEFAULT_EGRESS_ALLOWLIST)
+            self.volume_auth = volume_auth or "subbench-agy-auth"
+            self.state_mount = state_mount or "/agy-state"
+            self.container_bin_path = container_bin_path or "/usr/local/bin/agy"
 
     def provision(
         self, instance_id: str, base_commit: str, attempt_dir: Path
@@ -115,11 +132,22 @@ class DockerProvisioner:
         image_tag = build_overlay_image(instance_id)
         clean_inst = instance_id.replace("__", "-").replace("_", "-")
         container_name = f"subbench-task-{clean_inst}"
+        extra_ro_mounts: dict[str, str] = {}
+        if self.agent_kind == "codex":
+            bin_dir = Path(self.host_agy_path).parent
+            for helper in ("codex-code-mode-host", "rg"):
+                helper_path = bin_dir / helper
+                if helper_path.is_file():
+                    extra_ro_mounts[str(helper_path)] = f"/usr/local/bin/{helper}"
         cid = launch_task_container(
             image=image_tag,
             container_name=container_name,
             proxy_env=proxy_env,
+            volume_auth=self.volume_auth,
             host_agy_path=self.host_agy_path,
+            state_mount=self.state_mount,
+            container_bin_path=self.container_bin_path,
+            extra_ro_mounts=extra_ro_mounts or None,
         )
         initial_sha = prepare_workspace(cid, base_commit=base_commit)
         return DockerTaskEnvironment(cid, initial_sha, proxy_mgr, proxy_log, attempt_dir)
@@ -247,23 +275,25 @@ def record_environment(
     if cur.fetchone():
         return
 
+    bin_path = manifest.binary_path
     real_agy = agy_version
     if real_agy is None:
-        if Path(manifest.agy_path).is_file():
+        if Path(bin_path).is_file():
             try:
                 import subprocess
 
                 res = subprocess.run(
-                    [manifest.agy_path, "--version"],
+                    [bin_path, "--version"],
                     capture_output=True,
                     text=True,
                     check=False,
                 )
                 if res.returncode == 0 and res.stdout.strip():
-                    real_agy = res.stdout.strip()
+                    lines = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
+                    real_agy = lines[-1] if lines else None
             except Exception:
                 pass
-        real_agy = real_agy or "v1.4.12"
+        real_agy = real_agy or ("v1.4.12" if manifest.agent == "antigravity" else "unknown")
 
     real_docker = docker_version
     if real_docker is None:
@@ -304,7 +334,7 @@ def record_environment(
         """,
         (
             experiment_id,
-            manifest.agy_path,
+            bin_path,
             real_agy,
             platform.system(),
             platform.release(),
@@ -435,21 +465,50 @@ class Runner:
         self.db_path = db_path
         self.manifest = load_experiment(manifest_path)
         self.suite = load_suite(Path(self.manifest.suite))
-        self.quota_probe = quota_probe or AgyUsageProbe(host_agy_path=self.manifest.agy_path)
-        self.adapter_factory = adapter_factory or (
-            lambda cfg: AntigravityAdapter(
-                model_id=cfg.model_id,
-                effort=cfg.effort,
-                agy_bin="/usr/local/bin/agy",
+        if self.manifest.agent == "codex":
+            self.quota_probe = quota_probe or CodexUsageProbe(
+                host_codex_path=self.manifest.binary_path
             )
-        )
-        self.provisioner = provisioner or DockerProvisioner(host_agy_path=self.manifest.agy_path)
+            self.adapter_factory = adapter_factory or (
+                lambda cfg: CodexAdapter(
+                    model_id=cfg.model_id,
+                    effort=cfg.effort,
+                    codex_bin="/usr/local/bin/codex",
+                )
+            )
+            self.provisioner = provisioner or DockerProvisioner(
+                host_agy_path=self.manifest.binary_path,
+                agent_kind="codex",
+            )
+        else:
+            self.quota_probe = quota_probe or AgyUsageProbe(host_agy_path=self.manifest.binary_path)
+            self.adapter_factory = adapter_factory or (
+                lambda cfg: AntigravityAdapter(
+                    model_id=cfg.model_id,
+                    effort=cfg.effort,
+                    agy_bin="/usr/local/bin/agy",
+                )
+            )
+            self.provisioner = provisioner or DockerProvisioner(
+                host_agy_path=self.manifest.binary_path,
+                agent_kind="antigravity",
+            )
         self.sleep_fn = sleep_fn
         self.now_fn = now_fn
         self.skip_idle_check = skip_idle_check
         self.min_free_gb = min_free_gb
         self.problem_statements = problem_statements
         self.artifacts_dir = artifacts_dir
+
+    def _validity_buckets(self, config: ConfigSpec) -> list[str]:
+        """Return watched buckets used to check attempt validity and external contamination.
+
+        Scoping to `primary_bucket_by_config` when set avoids false invalidations
+        from asynchronous weekly backend settling jitter while keeping snapshots
+        and weekly cap tracking intact.
+        """
+        primary = self.manifest.quota.primary_bucket_by_config.get(config.label)
+        return [primary] if primary else list(config.buckets)
 
     def run_preflight(self, conn: sqlite3.Connection) -> None:
         """Verify pre-flight constraints before starting task execution."""
@@ -466,8 +525,10 @@ class Runner:
 
         # Docker and image pre-flight checks when using real Docker provisioner
         if isinstance(self.provisioner, DockerProvisioner):
-            if not Path(self.manifest.agy_path).is_file():
-                raise RuntimeError(f"Host agy binary not found at {self.manifest.agy_path}!")
+            if not Path(self.manifest.binary_path).is_file():
+                raise RuntimeError(
+                    f"Host {self.manifest.agent} binary not found at {self.manifest.binary_path}!"
+                )
             import subprocess
 
             res = subprocess.run(["docker", "info"], capture_output=True, text=True, check=False)
@@ -482,8 +543,8 @@ class Runner:
                 if not verify_base_image_exists(t.instance_id):
                     raise RuntimeError(f"Docker base image missing for instance {t.instance_id}!")
 
-        # Idle check across all watched buckets
-        all_buckets = {b for cfg in self.manifest.configs for b in cfg.buckets}
+        # Idle check across primary validity buckets (avoids weekly settling jitter)
+        all_buckets = {b for cfg in self.manifest.configs for b in self._validity_buckets(cfg)}
         if not self.skip_idle_check and self.manifest.quota.idle_check_seconds > 0:
             logger.info(
                 "Running idle check for %ds on %s...",
@@ -500,7 +561,7 @@ class Runner:
             if leaked:
                 raise RuntimeError(
                     f"External quota usage detected on buckets {leaked} before run started! "
-                    "Ensure no concurrent Gemini/Antigravity sessions are active."
+                    f"Ensure no concurrent {self.manifest.agent} sessions are active."
                 )
 
     def run(self, cycle_id: int | None = None, dry_run: bool = False) -> int:
@@ -653,12 +714,13 @@ class Runner:
             while True:
                 # Inter-attempt contamination check
                 snap_pre = self.quota_probe.snapshot()
+                validity_buckets = self._validity_buckets(config)
                 leaked_buckets: list[str] = []
                 if last_post_snapshot is not None:
                     leaked_buckets = detect_external_use(
                         last_post_snapshot,
                         snap_pre,
-                        watched_buckets=config.buckets,
+                        watched_buckets=validity_buckets,
                         threshold=self.manifest.quota.external_use_threshold,
                     )
                     if leaked_buckets:
@@ -934,7 +996,7 @@ class Runner:
                 )
 
                 delta_res = compute_attempt_deltas(
-                    snap_pre, snap_post, watched_buckets=config.buckets
+                    snap_pre, snap_post, watched_buckets=validity_buckets
                 )
                 if delta_res.invalid_reset:
                     conn.execute(

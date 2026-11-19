@@ -1,0 +1,421 @@
+"""Offline tests for Artificial Analysis integration, key resolution, and projections."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from subbench.aa import (
+    compute_aa_projections,
+    fetch_aa_models,
+    load_aa_cache,
+    match_aa_model,
+    parse_aa_models,
+    project_effort_variants,
+    resolve_aa_api_key,
+    store_aa_api_key_file,
+    write_aa_projection_reports,
+)
+from subbench.cli import app
+from subbench.config import (
+    ConfigRole,
+    ConfigSpec,
+    Difficulty,
+    ExperimentManifest,
+    SuiteManifest,
+    TaskSpec,
+)
+from subbench.quota import BucketReading, QuotaSnapshot, save_quota_snapshot
+from subbench.runner import record_configs, record_experiment
+from subbench.store import connect, init_db
+
+
+def test_resolve_aa_api_key_precedence(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("AA_API_KEY", raising=False)
+    monkeypatch.setattr("subbench.aa.shutil.which", lambda _: None)
+
+    key_file = tmp_path / "aa_api_key"
+    store_aa_api_key_file("file-secret", key_file=key_file)
+    assert (key_file.stat().st_mode & 0o777) == 0o600
+    assert resolve_aa_api_key(repo_root=tmp_path, key_file=key_file) == "file-secret"
+
+    (tmp_path / ".env.local").write_text('AA_API_KEY="dotenv-secret"\n', encoding="utf-8")
+    assert resolve_aa_api_key(repo_root=tmp_path, key_file=key_file) == "dotenv-secret"
+
+    monkeypatch.setenv("AA_API_KEY", "env-secret")
+    assert resolve_aa_api_key(repo_root=tmp_path, key_file=key_file) == "env-secret"
+
+
+def test_parse_and_match_aa_models() -> None:
+    payload = {
+        "data": [
+            {
+                "slug": "gemini-4-neon-medium",
+                "name": "Gemini 4 Neon (medium)",
+                "model_creator": {"name": "Google"},
+                "evaluations": {"artificial_analysis_intelligence_index": 58.2},
+                "pricing": {"price_1m_input_tokens": 1.25, "price_1m_output_tokens": 10.0},
+            },
+            {
+                "slug": "gpt-6-luna-xhigh",
+                "name": "GPT-6 Luna (xhigh)",
+                "model_creator": {"name": "OpenAI"},
+                "evaluations": {"artificial_analysis_intelligence_index": 42.0},
+                "pricing": {"price_1m_input_tokens": 0.10, "price_1m_output_tokens": 0.50},
+            },
+            {
+                "slug": "claude-sonnet-5-5",
+                "name": "Claude Sonnet 5.5 (medium)",
+                "model_creator": {"name": "Anthropic"},
+                "evaluations": {"artificial_analysis_intelligence_index": 56.0},
+                "pricing": {"price_1m_input_tokens": 3.0, "price_1m_output_tokens": 15.0},
+            },
+        ]
+    }
+    models = parse_aa_models(payload)
+    assert len(models) == 3
+
+    m_neon = match_aa_model("gemini-4-neon-medium", None, models)
+    assert m_neon is not None and m_neon.slug == "gemini-4-neon-medium"
+
+    m_luna = match_aa_model("gpt-6-luna", "xhigh", models)
+    assert m_luna is not None and m_luna.slug == "gpt-6-luna-xhigh"
+
+    m_sonnet = match_aa_model("claude-sonnet-5-5-medium", None, models)
+    assert m_sonnet is not None and m_sonnet.slug == "claude-sonnet-5-5"
+
+    # Prefer effort-qualified slug over bare base_id (Max)
+    models_with_max = [
+        *models,
+        *parse_aa_models(
+            {
+                "data": [
+                    {
+                        "slug": "gpt-6-luna",
+                        "name": "GPT-6 Luna (Max)",
+                        "model_creator": {"name": "OpenAI"},
+                        "evaluations": {"artificial_analysis_intelligence_index": 27.9},
+                        "pricing": {"price_1m_input_tokens": 0.1, "price_1m_output_tokens": 0.5},
+                    }
+                ]
+            }
+        ),
+    ]
+    m_luna_xhigh = match_aa_model("gpt-6-luna", "xhigh", models_with_max)
+    assert m_luna_xhigh is not None and m_luna_xhigh.slug == "gpt-6-luna-xhigh"
+
+
+def test_fetch_aa_models_caches_without_network(monkeypatch, tmp_path: Path) -> None:
+    sample = {
+        "data": [
+            {
+                "slug": "gpt-6-luna-high",
+                "name": "GPT-6 Luna (high)",
+                "model_creator": {"name": "OpenAI"},
+                "evaluations": {"artificial_analysis_intelligence_index": 39.5},
+                "pricing": {"price_1m_input_tokens": 0.10, "price_1m_output_tokens": 0.50},
+            }
+        ]
+    }
+
+    class FakeResp:
+        headers = {"X-RateLimit-Remaining": "99", "X-AA-Tier": "free"}
+
+        def read(self) -> bytes:
+            return json.dumps(sample).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    seen_headers: dict[str, str] = {}
+
+    def fake_urlopen(req, timeout=30):
+        seen_headers.update(dict(req.header_items()))
+        return FakeResp()
+
+    monkeypatch.setattr("subbench.aa.urllib.request.urlopen", fake_urlopen)
+    res = fetch_aa_models(api_key="test-key-123", cache_dir=tmp_path)
+    assert seen_headers.get("X-api-key") == "test-key-123"
+    assert res.model_count == 1
+    assert res.cache_path.exists()
+    assert res.archive_path.exists()
+    assert res.rate_limit_headers["x-aa-tier"] == "free"
+
+    fetched_at, loaded = load_aa_cache(res.cache_path)
+    assert fetched_at == res.fetched_at
+    assert loaded[0].slug == "gpt-6-luna-high"
+
+
+def test_compute_aa_projections_and_cli(tmp_path: Path) -> None:
+    db_path = tmp_path / "subbench.sqlite"
+    conn = connect(db_path)
+    init_db(conn)
+
+    suite = SuiteManifest(
+        version="verified-core-6",
+        dataset_revision="0123456789abcdef0123456789abcdef01234567",
+        seed=1,
+        tasks=[
+            TaskSpec(
+                instance_id="pytest-dev__pytest-5809",
+                repo="pytest-dev/pytest",
+                base_commit="abc",
+                difficulty=Difficulty.EASY,
+                order=0,
+            )
+        ],
+    )
+    cfg = ConfigSpec(
+        label="gpt-6-luna-high",
+        role=ConfigRole.DEFAULT,
+        model_id="gpt-6-luna",
+        effort="high",
+        buckets=["codex-30d"],
+    )
+    manifest = ExperimentManifest(
+        name="codex-test",
+        agent="codex",
+        suite="s.json",
+        codex_path="/usr/lib/chatgpt/resources/codex",
+        configs=[cfg],
+        quota={
+            "primary_bucket_by_config": {"gpt-6-luna-high": "codex-30d"},
+            "weekly_bucket_by_config": {"gpt-6-luna-high": "codex-30d"},
+        },
+    )
+    exp_id = record_experiment(conn, manifest, suite)
+    cfg_ids = record_configs(conn, exp_id, manifest)
+    c_id = conn.execute(
+        "INSERT INTO cycles (experiment_id, started_at, status) "
+        "VALUES (?, '2026-11-18Z', 'completed')",
+        (exp_id,),
+    ).lastrowid
+    a_id = conn.execute(
+        """
+        INSERT INTO attempts (
+            cycle_id, config_id, instance_id, pass_index, seq, state, valid,
+            input_tokens, output_tokens, cache_read_tokens
+        ) VALUES (?, ?, 'pytest-dev__pytest-5809', 0, 1, 'GRADED', 1, 1500000, 20000, 1000000)
+        """,
+        (c_id, cfg_ids["gpt-6-luna-high"]),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO grades (attempt_id, graded_at, resolved, patch_applied) "
+        "VALUES (?, 'now', 1, 1)",
+        (a_id,),
+    )
+    save_quota_snapshot(
+        conn,
+        cycle_id=c_id,
+        attempt_id=a_id,
+        phase="pre",
+        snap=QuotaSnapshot(
+            buckets={"codex-30d": BucketReading("codex-30d", "30d", 0.78)},
+            taken_at="now",
+            provenance="codex_usage",
+            raw_json="{}",
+        ),
+    )
+    save_quota_snapshot(
+        conn,
+        cycle_id=c_id,
+        attempt_id=a_id,
+        phase="post",
+        snap=QuotaSnapshot(
+            buckets={"codex-30d": BucketReading("codex-30d", "30d", 0.77)},
+            taken_at="now",
+            provenance="codex_usage",
+            raw_json="{}",
+        ),
+    )
+    conn.commit()
+
+    cache_path = tmp_path / "aa_models_latest.json"
+    cache_path.write_text(
+        json.dumps(
+            {
+                "fetched_at": "2026-11-19T00:00:00Z",
+                "data": [
+                    {
+                        "slug": "gpt-6-luna-high",
+                        "name": "GPT-6 Luna (high)",
+                        "model_creator": {"name": "OpenAI"},
+                        "evaluations": {"artificial_analysis_intelligence_index": 39.5},
+                        "artificial_analysis_intelligence_index_cost": {
+                            "cost_per_task": {"total_cost": 0.08}
+                        },
+                        "pricing": {
+                            "price_1m_input_tokens": 0.10,
+                            "price_1m_output_tokens": 0.50,
+                            "price_1m_cache_hit_tokens": 0.01,
+                        },
+                    },
+                    {
+                        "slug": "gpt-6-luna-medium",
+                        "name": "GPT-6 Luna (medium)",
+                        "model_creator": {"name": "OpenAI"},
+                        "evaluations": {"artificial_analysis_intelligence_index": 30.0},
+                        "artificial_analysis_intelligence_index_cost": {
+                            "cost_per_task": {"total_cost": 0.04}
+                        },
+                        "pricing": {
+                            "price_1m_input_tokens": 0.10,
+                            "price_1m_output_tokens": 0.50,
+                            "price_1m_cache_hit_tokens": 0.01,
+                        },
+                    },
+                ],
+            }
+        )
+    )
+
+    _, models = load_aa_cache(cache_path)
+    summaries = compute_aa_projections(conn, models)
+    assert len(summaries) == 1
+    s = summaries[0]
+    # Codex uncached = 1.5M - 1.0M = 0.5M ($0.05) + 1.0M*0.01 ($0.01) + 0.02M*0.50 ($0.01) = $0.07
+    assert abs((s.api_cost_usd or 0) - 0.07) < 1e-6
+    assert abs((s.implied_pool_usd_per_month or 0) - 7.0) < 1e-4
+    assert abs((s.tasks_per_month_resolved or 0) - 100.0) < 1e-4
+
+    effort_pts = project_effort_variants(summaries, models)
+    assert len(effort_pts) == 2
+    med_pt = next(p for p in effort_pts if p.effort == "medium")
+    assert not med_pt.measured
+    assert abs(med_pt.tasks_per_month_attempted - 200.0) < 1e-4
+
+    reports = write_aa_projection_reports(
+        summaries, effort_points=effort_pts, out_dir=tmp_path / "rep"
+    )
+    assert reports["md"].exists() and reports["csv"].exists()
+    assert reports["svg"].exists()
+    assert "<svg " in reports["svg"].read_text(encoding="utf-8")
+
+    runner = CliRunner()
+    res = runner.invoke(
+        app,
+        [
+            "aa",
+            "project",
+            "--cache-path",
+            str(cache_path),
+            "--db",
+            str(db_path),
+            "--out-dir",
+            str(tmp_path / "cli_rep"),
+        ],
+    )
+    assert res.exit_code == 0, res.stdout
+    assert "gpt-6-luna-high" in res.stdout
+
+
+def test_5h_calibration_overrides_noisy_weekly(tmp_path: Path) -> None:
+    db_path = tmp_path / "c.sqlite"
+    conn = connect(db_path)
+    init_db(conn)
+    suite = SuiteManifest(
+        version="verified-core-6",
+        dataset_revision="0123456789abcdef0123456789abcdef01234567",
+        seed=1,
+        tasks=[
+            TaskSpec(
+                instance_id="pytest-dev__pytest-5809",
+                repo="pytest-dev/pytest",
+                base_commit="abc",
+                difficulty=Difficulty.EASY,
+                order=0,
+            )
+        ],
+    )
+    cfg = ConfigSpec(
+        label="neon-medium",
+        role=ConfigRole.DEFAULT,
+        model_id="gemini-4-neon-medium",
+        buckets=["gemini-5h", "gemini-weekly"],
+    )
+    manifest = ExperimentManifest(
+        name="neon",
+        suite="s.json",
+        agy_path="/usr/local/bin/agy",
+        configs=[cfg],
+        quota={
+            "primary_bucket_by_config": {"neon-medium": "gemini-5h"},
+            "weekly_bucket_by_config": {"neon-medium": "gemini-weekly"},
+        },
+    )
+    exp_id = record_experiment(conn, manifest, suite)
+    cfg_ids = record_configs(conn, exp_id, manifest)
+    c_id = conn.execute(
+        "INSERT INTO cycles (experiment_id, started_at, status) "
+        "VALUES (?, '2026-11-19Z', 'completed')",
+        (exp_id,),
+    ).lastrowid
+    a_id = conn.execute(
+        """
+        INSERT INTO attempts (
+            cycle_id, config_id, instance_id, pass_index, seq, state, valid,
+            input_tokens, output_tokens, cache_read_tokens
+        ) VALUES (?, ?, 'pytest-dev__pytest-5809', 0, 1, 'GRADED', 1, 100000, 10000, 500000)
+        """,
+        (c_id, cfg_ids["neon-medium"]),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO grades (attempt_id, graded_at, resolved, patch_applied) "
+        "VALUES (?, 'now', 1, 1)",
+        (a_id,),
+    )
+    save_quota_snapshot(
+        conn,
+        cycle_id=c_id,
+        attempt_id=a_id,
+        phase="pre",
+        snap=QuotaSnapshot(
+            buckets={
+                "gemini-5h": BucketReading("gemini-5h", "5h", 1.00),
+                "gemini-weekly": BucketReading("gemini-weekly", "weekly", 0.80),
+            },
+            taken_at="now",
+            provenance="agy_usage",
+            raw_json="{}",
+        ),
+    )
+    save_quota_snapshot(
+        conn,
+        cycle_id=c_id,
+        attempt_id=a_id,
+        phase="post",
+        snap=QuotaSnapshot(
+            buckets={
+                "gemini-5h": BucketReading(
+                    "gemini-5h", "5h", 0.965
+                ),  # 3.5 pp 5h -> 1.0 pp weekly eq
+                "gemini-weekly": BucketReading("gemini-weekly", "weekly", 0.795),  # noisy 0.5 pp
+            },
+            taken_at="now",
+            provenance="agy_usage",
+            raw_json="{}",
+        ),
+    )
+    conn.commit()
+    aa_models = parse_aa_models(
+        {
+            "data": [
+                {
+                    "slug": "gemini-4-neon-medium",
+                    "name": "Gemini 4 Neon (Medium)",
+                    "model_creator": {"name": "Google"},
+                    "evaluations": {"artificial_analysis_intelligence_index": 54.9},
+                    "pricing": {"price_1m_input_tokens": 3.0, "price_1m_output_tokens": 15.0},
+                }
+            ]
+        }
+    )
+    s_cal = compute_aa_projections(conn, aa_models, use_5h_calibration=True)[0]
+    s_raw = compute_aa_projections(conn, aa_models, use_5h_calibration=False)[0]
+    assert abs(s_cal.weekly_burn_pp - 1.0) < 1e-6
+    assert abs(s_raw.weekly_burn_pp - 0.5) < 1e-6

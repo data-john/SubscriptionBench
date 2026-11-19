@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from subbench.provision.network import DEFAULT_EGRESS_ALLOWLIST
+from subbench.provision.network import CODEX_EGRESS_ALLOWLIST, DEFAULT_EGRESS_ALLOWLIST
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ BENIGN_PROXY_HOSTS = frozenset(
         "lh3.googleusercontent.com",
         "doesnotexist.google.com",
         "10.255.255.1",
+        "ab.chatgpt.com",
     }
 )
 
@@ -74,6 +75,75 @@ class Finding:
     event_idx: int | None = None
 
 
+def _audit_command_execution(
+    cmd_text: str,
+    output_str: str,
+    line_idx: int,
+    task_repo: str = "",
+    task_issue: str = "",
+) -> list[Finding]:
+    """Audit a shell command and its output for outbound URLs or multi-commit git probes."""
+    if not cmd_text:
+        return []
+    findings: list[Finding] = []
+    cmd_lower = cmd_text.lower()
+    has_net_cmd = any(re.search(pat, cmd_lower) for pat in NETWORK_COMMAND_PATTERNS)
+    has_url = any(u in cmd_lower for u in ("http://", "https://", "git@"))
+    is_local = any(loc in cmd_lower for loc in ("localhost", "127.0.0.1", "::1"))
+
+    if has_net_cmd and has_url and not is_local:
+        is_code_host = any(h in cmd_lower for h in CODE_QA_HOSTS)
+        is_task_ref = (task_repo and task_repo.lower() in cmd_lower) or (
+            task_issue and task_issue.lower() in cmd_lower
+        )
+        sev: Severity = "leak" if (is_code_host or is_task_ref) else "warn"
+        findings.append(
+            Finding(
+                kind="outbound_url_command",
+                severity=sev,
+                evidence=f"Network command targeting external URL: {cmd_text[:80]}",
+                event_idx=line_idx,
+            )
+        )
+
+    is_git_probe = any(
+        g in cmd_lower
+        for g in (
+            "git log",
+            "git reflog",
+            "git branch -a",
+            "git tag",
+            "git remote -v",
+        )
+    )
+    if is_git_probe:
+        commit_count = len(re.findall(r"(?m)^commit\s+[0-9a-f]{40}\b", output_str))
+        if commit_count == 0 and "--oneline" in cmd_lower:
+            commit_count = len(re.findall(r"(?m)^[0-9a-f]{7,40}\s+", output_str))
+
+        if commit_count > 1:
+            findings.append(
+                Finding(
+                    kind="git_history_probe",
+                    severity="leak",
+                    evidence=(
+                        f"Git history probe revealed {commit_count} commits: {cmd_text[:80]}"
+                    ),
+                    event_idx=line_idx,
+                )
+            )
+        else:
+            findings.append(
+                Finding(
+                    kind="git_history_probe",
+                    severity="info",
+                    evidence=f"Single-commit git inspection: {cmd_text[:80]}",
+                    event_idx=line_idx,
+                )
+            )
+    return findings
+
+
 def audit_ndjson_events(
     lines: list[str],
     task_repo: str = "",
@@ -83,8 +153,9 @@ def audit_ndjson_events(
     findings: list[Finding] = []
     line_idx = 0
 
-    # Scan for completed/terminal step indices to avoid double-counting ACTIVE + DONE pairs
+    # Scan for completed/terminal step indices or Codex item IDs to avoid double-counting
     completed_step_indices: set[int] = set()
+    completed_codex_item_ids: set[str] = set()
     for raw_line in lines:
         stripped = raw_line.strip()
         if not stripped:
@@ -99,6 +170,10 @@ def audit_ndjson_events(
             s_state = st.get("state")
             if s_idx is not None and s_state != "ACTIVE":
                 completed_step_indices.add(s_idx)
+        elif item.get("type") == "item.completed":
+            inner = item.get("item")
+            if isinstance(inner, dict) and inner.get("id"):
+                completed_codex_item_ids.add(str(inner["id"]))
 
     for raw_line in lines:
         stripped = raw_line.strip()
@@ -111,6 +186,8 @@ def audit_ndjson_events(
             continue
 
         event_type = item.get("event")
+        codex_type = item.get("type")
+
         if event_type == "step_update":
             step = item.get("step_update", {})
             tool_info = step.get("tool_info") if isinstance(step.get("tool_info"), dict) else {}
@@ -135,7 +212,7 @@ def audit_ndjson_events(
                     )
                 )
 
-            # 2. Outbound network commands inside run_command / command
+            # 2. Outbound network commands & git history probes inside run_command / command
             if tool_name in ("command", "run_command"):
                 params = tool_info.get("parameters") if isinstance(tool_info, dict) else {}
                 cmd_text = ""
@@ -148,72 +225,52 @@ def audit_ndjson_events(
                     elif isinstance(args, str):
                         cmd_text = args
 
-                if cmd_text:
-                    cmd_lower = cmd_text.lower()
-                    has_net_cmd = any(re.search(pat, cmd_lower) for pat in NETWORK_COMMAND_PATTERNS)
-                    has_url = any(u in cmd_lower for u in ("http://", "https://", "git@"))
-                    is_local = any(loc in cmd_lower for loc in ("localhost", "127.0.0.1", "::1"))
+                output_str = ""
+                if "output" in tool_info:
+                    output_str = str(tool_info["output"] or "")
+                if not output_str:
+                    output_str = str(step.get("output") or step.get("stdout") or "")
 
-                    if has_net_cmd and has_url and not is_local:
-                        # Check if referencing task repo, PR, or code host
-                        is_code_host = any(h in cmd_lower for h in CODE_QA_HOSTS)
-                        is_task_ref = (task_repo and task_repo.lower() in cmd_lower) or (
-                            task_issue and task_issue.lower() in cmd_lower
-                        )
-                        sev: Severity = "leak" if (is_code_host or is_task_ref) else "warn"
-                        findings.append(
-                            Finding(
-                                kind="outbound_url_command",
-                                severity=sev,
-                                evidence=f"Network command targeting external URL: {cmd_text[:80]}",
-                                event_idx=line_idx,
-                            )
-                        )
-
-                    # 3. Git history probes
-                    is_git_probe = any(
-                        g in cmd_lower
-                        for g in (
-                            "git log",
-                            "git reflog",
-                            "git branch -a",
-                            "git tag",
-                            "git remote -v",
-                        )
+                findings.extend(
+                    _audit_command_execution(
+                        cmd_text,
+                        output_str,
+                        line_idx,
+                        task_repo=task_repo,
+                        task_issue=task_issue,
                     )
-                    if is_git_probe:
-                        output_str = ""
-                        if "output" in tool_info:
-                            output_str = str(tool_info["output"] or "")
-                        if not output_str:
-                            output_str = str(step.get("output") or step.get("stdout") or "")
+                )
 
-                        # Count commit headers in output
-                        commit_count = len(re.findall(r"(?m)^commit\s+[0-9a-f]{40}\b", output_str))
-                        if commit_count == 0 and "--oneline" in cmd_lower:
-                            commit_count = len(re.findall(r"(?m)^[0-9a-f]{7,40}\s+", output_str))
-
-                        if commit_count > 1:
-                            findings.append(
-                                Finding(
-                                    kind="git_history_probe",
-                                    severity="leak",
-                                    evidence=(
-                                        f"Git history probe revealed {commit_count} commits: "
-                                        f"{cmd_text[:80]}"
-                                    ),
-                                    event_idx=line_idx,
-                                )
-                            )
-                        else:
-                            findings.append(
-                                Finding(
-                                    kind="git_history_probe",
-                                    severity="info",
-                                    evidence=f"Single-commit git inspection: {cmd_text[:80]}",
-                                    event_idx=line_idx,
-                                )
-                            )
+        elif codex_type in ("item.started", "item.updated", "item.completed"):
+            inner = item.get("item")
+            if not isinstance(inner, dict):
+                continue
+            item_id = inner.get("id")
+            if codex_type != "item.completed" and item_id in completed_codex_item_ids:
+                continue
+            inner_type = str(inner.get("type") or "")
+            if inner_type == "web_search":
+                sev_web: Severity = "leak" if codex_type == "item.completed" else "warn"
+                findings.append(
+                    Finding(
+                        kind="web_tool_call",
+                        severity=sev_web,
+                        evidence=f"Web tool call: web_search (event={codex_type})",
+                        event_idx=line_idx,
+                    )
+                )
+            elif inner_type == "command_execution":
+                cmd_text = str(inner.get("command") or "")
+                output_str = str(inner.get("aggregated_output") or "")
+                findings.extend(
+                    _audit_command_execution(
+                        cmd_text,
+                        output_str,
+                        line_idx,
+                        task_repo=task_repo,
+                        task_issue=task_issue,
+                    )
+                )
 
     return findings
 
@@ -295,6 +352,7 @@ def audit_attempt(
     proxy_log_path: Path | None = None,
     task_repo: str = "",
     task_issue: str = "",
+    allowlist: frozenset[str] = DEFAULT_EGRESS_ALLOWLIST,
 ) -> list[Finding]:
     """Audit a single attempt and record findings into SQLite."""
     findings: list[Finding] = []
@@ -306,7 +364,7 @@ def audit_attempt(
 
     # 2. Audit proxy log
     if proxy_log_path and proxy_log_path.exists():
-        findings.extend(audit_proxy_log(proxy_log_path))
+        findings.extend(audit_proxy_log(proxy_log_path, allowlist=allowlist))
 
     # Idempotent write: delete previous findings for this attempt
     conn.execute("DELETE FROM audit_findings WHERE attempt_id = ?", (attempt_id,))
@@ -336,6 +394,24 @@ def audit_cycle(
     cycle_id: int,
 ) -> dict[str, Any]:
     """Audit all attempts in a cycle."""
+    allowlist = DEFAULT_EGRESS_ALLOWLIST
+    exp_row = conn.execute(
+        """
+        SELECT e.manifest_json
+        FROM cycles c
+        JOIN experiments e ON c.experiment_id = e.id
+        WHERE c.id = ?
+        """,
+        (cycle_id,),
+    ).fetchone()
+    if exp_row and exp_row[0]:
+        try:
+            manifest_obj = json.loads(exp_row[0])
+            if manifest_obj.get("agent") == "codex":
+                allowlist = CODEX_EGRESS_ALLOWLIST
+        except Exception:
+            pass
+
     cur = conn.execute(
         """
         SELECT id, transcript_path, instance_id
@@ -376,6 +452,7 @@ def audit_cycle(
             proxy_log_path=proxy_p,
             task_repo=derived_repo,
             task_issue=inst_id,
+            allowlist=allowlist,
         )
         total_findings += len(findings)
         for f in findings:

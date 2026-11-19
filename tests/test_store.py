@@ -97,13 +97,27 @@ def test_migration_progression_and_execution_mode():
         " VALUES (1, '/path', '1.0', 'linux', 'now')"
     )
 
-    # Run init_db to migrate to latest (v2)
+    # Run init_db to migrate to latest (v3)
     new_version = init_db(raw_conn)
-    assert new_version == SCHEMA_VERSION == 2
+    assert new_version == SCHEMA_VERSION == 3
 
     # Check execution_mode added with default 'container'
     row = raw_conn.execute("SELECT execution_mode FROM environment WHERE id=1").fetchone()
     assert row["execution_mode"] == "container"
+
+    # Verify codex_usage provenance is accepted after v3 migration
+    aid = _attempt(raw_conn)
+    raw_conn.execute(
+        "INSERT INTO quota_snapshots (cycle_id,attempt_id,phase,bucket_id,window,"
+        "remaining_fraction,taken_at,provenance) VALUES (1,?,?,?,?,?,'now','codex_usage')",
+        (aid, "pre", "codex-30d", "30d", 0.78),
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        raw_conn.execute(
+            "INSERT INTO quota_snapshots (cycle_id,attempt_id,phase,bucket_id,window,"
+            "remaining_fraction,taken_at,provenance) VALUES (1,?,?,?,?,?,'now','bogus')",
+            (aid, "pre", "codex-30d", "30d", 0.78),
+        )
 
     # Verify check constraint
     raw_conn.execute(

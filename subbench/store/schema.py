@@ -164,6 +164,33 @@ MIGRATIONS: list[str] = [
         ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'container'
         CHECK (execution_mode IN ('container', 'hybrid_host'));
     """,
+    # --- v3 ---
+    """
+    CREATE TABLE quota_snapshots_v3 (
+        id                 INTEGER PRIMARY KEY,
+        cycle_id           INTEGER NOT NULL REFERENCES cycles(id),
+        attempt_id         INTEGER REFERENCES attempts(id),
+        phase              TEXT NOT NULL CHECK (phase IN ('pre','post','idle','manual')),
+        bucket_id          TEXT NOT NULL,
+        window             TEXT NOT NULL,
+        remaining_fraction REAL NOT NULL,
+        reset_time         TEXT,
+        taken_at           TEXT NOT NULL,
+        provenance         TEXT NOT NULL CHECK (provenance IN ('agy_usage','codex_usage','manual')),
+        raw_json           TEXT
+    );
+    INSERT INTO quota_snapshots_v3 (
+        id, cycle_id, attempt_id, phase, bucket_id, window,
+        remaining_fraction, reset_time, taken_at, provenance, raw_json
+    )
+    SELECT
+        id, cycle_id, attempt_id, phase, bucket_id, window,
+        remaining_fraction, reset_time, taken_at, provenance, raw_json
+    FROM quota_snapshots;
+    DROP TABLE quota_snapshots;
+    ALTER TABLE quota_snapshots_v3 RENAME TO quota_snapshots;
+    CREATE INDEX quota_by_attempt ON quota_snapshots (attempt_id, phase, bucket_id);
+    """,
 ]
 
 SCHEMA_VERSION = len(MIGRATIONS)

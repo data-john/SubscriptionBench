@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import io
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from subbench.quota import (
+    AgyUsageProbe,
     BucketReading,
+    CodexUsageProbe,
     ManualQuotaProbe,
     QuotaSnapshot,
     check_idle,
@@ -309,3 +313,139 @@ def test_save_quota_snapshot_db(tmp_path: Path):
     buckets_in_db = {r[0]: r[2] for r in rows}
     assert buckets_in_db["gemini-5h"] == 0.85
     assert buckets_in_db["gemini-weekly"] == 0.95
+
+
+def test_agy_usage_probe_retries_on_timeout_and_cleans_up_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = USAGE_SCHEMA_PATH.read_text(encoding="utf-8")
+    probe = AgyUsageProbe(timeout_seconds=5, retries=1)
+    monkeypatch.setattr(probe, "ensure_image", lambda: "subbench-agy:probe")
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
+        if cmd[:3] == ["docker", "rm", "-f"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        run_calls = [c for c in calls if c[:2] == ["docker", "run"]]
+        if len(run_calls) == 1:
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=5)
+        return subprocess.CompletedProcess(cmd, 0, stdout=raw, stderr="")
+
+    monkeypatch.setattr("subbench.quota.agy_usage.subprocess.run", fake_run)
+    monkeypatch.setattr("subbench.quota.base.subprocess.run", fake_run)
+
+    snap = probe.snapshot()
+    assert snap.provenance == "agy_usage"
+
+    run_cmds = [c for c in calls if c[:2] == ["docker", "run"]]
+    rm_cmds = [c for c in calls if c[:3] == ["docker", "rm", "-f"]]
+    assert len(run_cmds) == 2
+    assert len(rm_cmds) == 1
+    first_cname = run_cmds[0][run_cmds[0].index("--name") + 1]
+    assert rm_cmds[0] == ["docker", "rm", "-f", first_cname]
+
+
+def test_agy_usage_probe_raises_after_exhausting_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = AgyUsageProbe(timeout_seconds=5, retries=1)
+    monkeypatch.setattr(probe, "ensure_image", lambda: "subbench-agy:probe")
+    removed: list[str] = []
+
+    def fake_run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+        if cmd[:3] == ["docker", "rm", "-f"]:
+            removed.append(cmd[3])
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=5)
+
+    monkeypatch.setattr("subbench.quota.agy_usage.subprocess.run", fake_run)
+    monkeypatch.setattr("subbench.quota.base.subprocess.run", fake_run)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        probe.snapshot()
+    assert len(removed) == 2
+
+
+def test_codex_usage_probe_retries_on_timeout_and_cleans_up_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = CodexUsageProbe(host_codex_path="/opt/codex", timeout_seconds=1, retries=1)
+    monkeypatch.setattr(probe, "ensure_image", lambda: "subbench-agy:probe")
+
+    removed: list[str] = []
+    popened_cmds: list[list[str]] = []
+
+    def fake_rm(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
+        if cmd[:3] == ["docker", "rm", "-f"]:
+            removed.append(cmd[3])
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("subbench.quota.base.subprocess.run", fake_rm)
+
+    rate_limits_msg = {
+        "id": 2,
+        "result": {
+            "rateLimitsByLimitId": {
+                "codex": {
+                    "limitId": "codex",
+                    "primary": {
+                        "usedPercent": 10,
+                        "windowDurationMins": 43200,
+                        "resetsAt": 1795876811,
+                    },
+                    "secondary": None,
+                }
+            }
+        },
+    }
+
+    class FakeProc:
+        def __init__(self, lines: list[str], returncode: int = 0) -> None:
+            self.stdin = io.StringIO()
+            self.stdout = io.StringIO("".join(lines))
+            self.stderr = io.StringIO("")
+            self.returncode = returncode
+
+        def terminate(self) -> None:
+            pass
+
+        def wait(self, timeout: float | None = None) -> int:
+            return self.returncode
+
+        def kill(self) -> None:
+            pass
+
+    monotonic_calls = 0
+
+    def fake_monotonic() -> float:
+        nonlocal monotonic_calls
+        monotonic_calls += 1
+        # First Popen attempt: deadline passes immediately while reading EOF
+        if len(popened_cmds) == 1 and monotonic_calls >= 2:
+            return 100.0
+        return 0.0
+
+    def fake_popen(cmd: list[str], **kwargs) -> FakeProc:
+        popened_cmds.append(cmd)
+        if len(popened_cmds) == 1:
+            return FakeProc(lines=[], returncode=-9)
+        return FakeProc(
+            lines=[
+                json.dumps({"id": 1, "result": {}}) + "\n",
+                json.dumps(rate_limits_msg) + "\n",
+            ],
+            returncode=0,
+        )
+
+    monkeypatch.setattr("subbench.quota.codex_usage.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("subbench.quota.codex_usage.subprocess.Popen", fake_popen)
+
+    snap = probe.snapshot()
+    assert snap.provenance == "codex_usage"
+    assert abs(snap.buckets["codex-30d"].remaining_fraction - 0.90) < 1e-9
+    assert len(popened_cmds) == 2
+    assert len(removed) >= 1
+    first_cname = popened_cmds[0][popened_cmds[0].index("--name") + 1]
+    assert first_cname in removed

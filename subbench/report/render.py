@@ -36,15 +36,25 @@ def render_summary_markdown(report: CycleReportData) -> str:
     lines.append("")
 
     # 3. Mandatory F3 Quota Pool Disclosure Alert
-    lines.append(
-        "> [!NOTE]\n"
-        "> **Quota Pool Disclosure (F3):** Configurations `default` and `capable` draw from "
-        "the **shared** `gemini-argon-wtu-weekly` quota pool. Configuration `efficient` draws from "
-        "**disjoint** `gemini-5h` and `gemini-weekly` quota pools. Direct quota efficiency "
-        "comparisons between Flash and Argon reflect consumption relative to their respective "
-        "subscription pools. All reported confidence intervals are Wilson 95% score intervals "
-        "evaluated on planned task slots.\n"
-    )
+    if report.manifest.agent == "codex":
+        lines.append(
+            "> [!NOTE]\n"
+            "> **Quota Pool Disclosure (Codex):** Quota readings come from Codex "
+            "`account/rateLimits/read` (`usedPercent` integer percentage points). On ChatGPT Free "
+            "plans, configurations share the single `codex-30d` (30-day rolling/monthly) pool. "
+            "All reported confidence intervals are Wilson 95% score intervals evaluated on "
+            "planned task slots.\n"
+        )
+    else:
+        lines.append(
+            "> [!NOTE]\n"
+            "> **Quota Pool Disclosure (F3):** Configurations `default` and `capable` draw from "
+            "the **shared** `gemini-argon-wtu-weekly` quota pool. Configuration `efficient` "
+            "draws from **disjoint** `gemini-5h` and `gemini-weekly` quota pools. Direct quota "
+            "efficiency comparisons between Flash and Argon reflect consumption relative to their "
+            "respective subscription pools. All reported confidence intervals are Wilson 95% "
+            "score intervals evaluated on planned task slots.\n"
+        )
 
     # 4. Executive Summary Table
     lines.append("## 1. Executive Performance & Quota Efficiency\n")
@@ -190,7 +200,8 @@ def render_summary_markdown(report: CycleReportData) -> str:
         if report.environment_drift:
             ed = report.environment_drift
             lines.append("### Environment Drift\n")
-            lines.append(f"- **Antigravity CLI:** `{ed.agy_version[0]}` → `{ed.agy_version[1]}`")
+            cli_label = "Codex CLI" if report.manifest.agent == "codex" else "Antigravity CLI"
+            lines.append(f"- **{cli_label}:** `{ed.agy_version[0]}` → `{ed.agy_version[1]}`")
             lines.append(
                 f"- **SWE-bench:** `{ed.swebench_version[0]}` → `{ed.swebench_version[1]}`"
             )

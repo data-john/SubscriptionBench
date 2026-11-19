@@ -1,0 +1,23 @@
+# Free Codex subscription full 6-task core suite run (matches hydrogen-medium suite).
+name: codex-free-core
+description: Free Codex subscription (gpt-6-luna, medium effort) on the 6-task core suite.
+agent: codex
+suite: suites/verified-core-6.json
+codex_path: /usr/lib/chatgpt/resources/codex
+passes: 1
+timeout_minutes: 45
+prompt_template: minimal-v1
+configs:
+  - label: gpt-6-luna-medium
+    role: default
+    model_id: gpt-6-luna
+    effort: medium
+    buckets: [codex-30d]
+quota:
+  idle_check_seconds: 15
+  max_weekly_fraction_per_config_cycle: 0.70  # Leave safety reserve out of 30d free allowance
+  external_use_threshold: 0.005  # 0.5 pp (codex reports integer percentage points)
+  weekly_bucket_by_config:
+    gpt-6-luna-medium: codex-30d
+  primary_bucket_by_config:
+    gpt-6-luna-medium: codex-30d

@@ -1,0 +1,24 @@
+# Free Codex subscription pilot: 3 tasks (easy/medium/hard) from verified-core-6.
+name: codex-free-pilot
+description: Free Codex subscription pilot (gpt-6-luna, medium effort) on first 3 tasks of verified-core-6.
+agent: codex
+suite: suites/verified-core-6.json
+codex_path: /usr/lib/chatgpt/resources/codex
+passes: 1
+timeout_minutes: 45
+prompt_template: minimal-v1
+task_limit: 3
+configs:
+  - label: gpt-6-luna-medium
+    role: default
+    model_id: gpt-6-luna
+    effort: medium
+    buckets: [codex-30d]
+quota:
+  idle_check_seconds: 15
+  max_weekly_fraction_per_config_cycle: 0.60  # Cap cycle spend at 60 pp of 30d free allowance
+  external_use_threshold: 0.005  # 0.5 pp (codex reports integer percentage points)
+  weekly_bucket_by_config:
+    gpt-6-luna-medium: codex-30d
+  primary_bucket_by_config:
+    gpt-6-luna-medium: codex-30d
