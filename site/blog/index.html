@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blog — SubscriptionBench | Antigravity, Gemini 4 &amp; AI Coding Subscription Analysis</title>
+  <meta
+    name="description"
+    content="Empirical write-ups on AI coding subscriptions: Gemini 4 Neon vs Hydrogen in Google Antigravity, real weekly quota limits, and value-per-dollar comparisons."
+  />
+  <link rel="canonical" href="https://data-john.github.io/SubscriptionBench/blog/" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="../config.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="../">
+        <span class="brand-mark">SB</span>
+        <span>SubscriptionBench</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="../#pareto">Pareto Chart</a>
+        <a href="../#monthly-tasks">Tasks / Month</a>
+        <a href="../#planner">Quota Planner</a>
+        <a href="./" style="color: var(--text); font-weight: 600;">Blog</a>
+      </nav>
+      <div class="topbar-actions">
+        <a class="btn-subtle" href="https://ko-fi.com/datajohn" target="_blank" rel="noopener noreferrer">
+          <span class="kofi-dot" aria-hidden="true"></span>
+          <span>Ko-fi</span>
+        </a>
+        <a class="btn-subtle" href="https://github.com/data-john/SubscriptionBench" target="_blank" rel="noopener noreferrer">
+          GitHub
+        </a>
+        <button id="theme-toggle" class="btn-subtle" type="button" aria-label="Toggle color theme">
+          Dark
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="article-wrap">
+      <section class="hero">
+        <div class="hero-eyebrow">
+          <span class="pill-tag">Research Notes &amp; Guides</span>
+          <span>Empirical AI Coding Subscription Benchmarks</span>
+        </div>
+        <h1>SubscriptionBench Blog</h1>
+        <p class="hero-lead">
+          Plain-English breakdowns of real-world coding quota limits, model selection strategies, and value-per-dollar across Google Antigravity, Claude, and Codex subscriptions.
+        </p>
+      </section>
+
+      <div class="blog-list">
+        <a class="post-card" href="./neon-vs-hydrogen-antigravity.html">
+          <div class="post-meta">
+            <span class="pill-tag">Antigravity Strategy</span>
+            <time datetime="2026-11-19">Nov 19, 2026</time>
+            <span>· 3 min read</span>
+          </div>
+          <h2>Gemini 4 Neon vs. Hydrogen in Antigravity: Why Neon First Wins on Quota &amp; Intelligence</h2>
+          <p>
+            Empirical weekly quota testing on Google AI Pro shows Gemini 4 Neon delivers higher Artificial Analysis intelligence and more monthly tasks than Hydrogen at every reasoning level above Hydrogen Low.
+          </p>
+          <span class="post-readmore">Read article &amp; interactive chart →</span>
+        </a>
+      </div>
+
+      <section class="support-strip" aria-label="Support future benchmarks">
+        <div class="support-copy">
+          <strong>Coming next: Claude Pro/Max &amp; ChatGPT Plus/Pro (Codex)</strong>
+          <span>
+            Want head-to-head monthly quota benchmarks against Claude and Codex? Optional tips on Ko-fi help fund the next round of subscription tests.
+          </span>
+        </div>
+        <a class="btn-kofi" href="https://ko-fi.com/datajohn" target="_blank" rel="noopener noreferrer">
+          <span class="kofi-dot" aria-hidden="true"></span>
+          <span>Support on Ko-fi</span>
+        </a>
+      </section>
+
+      <footer class="footer">
+        <div><strong>SubscriptionBench</strong> · Independent AI subscription benchmarks</div>
+        <div class="footer-links">
+          <a href="../">Interactive Dashboard</a>
+          <a href="https://github.com/data-john/SubscriptionBench" target="_blank" rel="noopener noreferrer">GitHub Repo</a>
+          <a href="https://ko-fi.com/datajohn" target="_blank" rel="noopener noreferrer">Ko-fi</a>
+          <a href="../llms.txt">llms.txt</a>
+        </div>
+      </footer>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      const saved = localStorage.getItem("subbench-theme") || "light";
+      const btn = document.getElementById("theme-toggle");
+      function apply(t) {
+        document.documentElement.setAttribute("data-theme", t);
+        localStorage.setItem("subbench-theme", t);
+        if (btn) btn.textContent = t === "dark" ? "Light" : "Dark";
+      }
+      apply(saved);
+      if (btn) btn.addEventListener("click", () => apply(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"));
+    })();
+  </script>
+</body>
+</html>

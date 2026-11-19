@@ -35,7 +35,8 @@
     theme: localStorage.getItem("subbench-theme") || "light",
     metric: "primary", // "primary" | "token"
     era: "compare", // "compare" | "current" | "nov7"
-    scope: "all", // "all" | "pro" | "gemini"
+    scope: "pro", // "pro" (All Antigravity) | "gemini" (Gemini Pool Only)
+    includeCodexFree: false, // opt-in for GPT-6 Luna (Codex Free)
     xScale: "log", // "log" | "linear"
     showCurves: true,
     showCI: false,
@@ -176,9 +177,12 @@
 
   function getFilteredProjections() {
     return state.data.projections.filter((p) => {
+      const isCodex = p.weekly_bucket === "codex-30d";
+      if (isCodex) {
+        return state.includeCodexFree && state.era !== "nov7";
+      }
       if (state.era === "current" && p.era !== "current") return false;
       if (state.era === "nov7" && p.era !== "nov7") return false;
-      if (state.scope === "pro" && p.weekly_bucket === "codex-30d") return false;
       if (
         state.scope === "gemini" &&
         p.weekly_bucket !== "gemini-weekly" &&
@@ -383,7 +387,7 @@
         gridcolor: colors.grid,
         zerolinecolor: colors.grid,
         tickfont: { color: colors.muted },
-        range: [6, 66],
+        range: state.includeCodexFree ? [6, 66] : [22, 66],
       },
       legend: {
         orientation: "h",
@@ -417,7 +421,9 @@
         "Estimated coding tasks you can complete per month from each model's included subscription quota (at full weekly usage).";
       filterEl.style.display = "inline-flex";
 
-      let rows = [...state.data.projections];
+      let rows = state.data.projections.filter(
+        (r) => state.includeCodexFree || r.weekly_bucket !== "codex-30d"
+      );
       if (state.barFilter === "defaults") {
         rows = rows.filter((r) => KEY_MODEL_IDS.has(r.id));
       } else if (state.barFilter === "current") {
@@ -499,6 +505,7 @@
       // Deduplicate by keeping latest cycle per model_id (e.g. Cycle 12 Hydrogen over Cycle 5)
       const latestByModel = new Map();
       for (const r of state.data.measured_cycles) {
+        if (!state.includeCodexFree && r.weekly_bucket === "codex-30d") continue;
         const key = `${r.model_id}:${r.effort}:${r.weekly_bucket}`;
         const prev = latestByModel.get(key);
         if (!prev || r.cycle_id > prev.cycle_id) latestByModel.set(key, r);
@@ -919,6 +926,20 @@
           : { key: "date", dir: "desc" };
       renderTable();
     });
+
+    const syncCodexToggle = (checked) => {
+      state.includeCodexFree = checked;
+      const a = document.getElementById("toggle-codex-free");
+      const b = document.getElementById("toggle-codex-free-bar");
+      if (a) a.checked = checked;
+      if (b) b.checked = checked;
+      renderParetoChart();
+      renderBarChart();
+    };
+    const codexA = document.getElementById("toggle-codex-free");
+    const codexB = document.getElementById("toggle-codex-free-bar");
+    if (codexA) codexA.addEventListener("change", (e) => syncCodexToggle(e.target.checked));
+    if (codexB) codexB.addEventListener("change", (e) => syncCodexToggle(e.target.checked));
 
     document.getElementById("toggle-curves").addEventListener("change", (e) => {
       state.showCurves = e.target.checked;

@@ -1,0 +1,34 @@
+# SubscriptionBench
+
+> Independent, empirical benchmarks measuring how much real coding work consumer AI subscriptions deliver per month—combining measured multi-turn quota burn with Artificial Analysis Intelligence Index v5.
+
+- Dashboard: https://data-john.github.io/SubscriptionBench/
+- Blog: https://data-john.github.io/SubscriptionBench/blog/
+- Source Code & Raw Data: https://github.com/data-john/SubscriptionBench
+- Support Future Benchmarks (Ko-fi): https://ko-fi.com/datajohn
+- Data Snapshot: 2026-11-19 (Artificial Analysis Intelligence Index v5)
+
+## Key Findings (Google AI Pro — $19.99/mo on Antigravity)
+
+1. **Gemini 4 Neon beats Gemini 4 Hydrogen across almost every reasoning level:**
+   - Gemini 4 Neon (xHigh): 61.4 AA Intelligence, ~45 tasks/month (Pareto frontier)
+   - Gemini 4 Neon (High): 59.6 AA Intelligence, ~78 tasks/month (Pareto frontier)
+   - Gemini 4 Neon (Medium): 54.9 AA Intelligence, ~154 tasks/month (Pareto frontier; beats Hydrogen xHigh 53.9 @ 66/mo by 2.3x)
+   - Gemini 4 Neon (Low): 44.1 AA Intelligence, ~352 tasks/month (Pareto frontier; beats Hydrogen Medium 41.2 @ 263/mo)
+   - Gemini 4 Hydrogen (Low): 26.9 AA Intelligence, ~718 tasks/month (Pareto frontier; only non-Neon point on the frontier, best only for maximum volume on simple tasks)
+
+2. **Rapid 2-Week Value Jump (Nov 7 to Nov 19, 2026):**
+   - Nov 7 Google AI Pro baseline: Gemini 3.8 Flash (30.1–30.8 AA, ~57–77 tasks/mo) and Gemini 4 Argon High (50.4 AA, ~15 tasks/mo).
+   - Nov 19 Google AI Pro: Gemini 4 Neon reaches 61.4 AA (~45 tasks/mo) and 54.9 AA (~154 tasks/mo).
+   - Equivalent monthly API value of the main Gemini weekly pool: ~$210–$293/month on Gemini 4 Hydrogen/Neon (~10.5x–14.6x the $19.99/mo subscription), plus ~$20/month on the separate third-party Claude bonus pool (Claude Opus 5.5 Medium: 48.2 AA, ~8 tasks/mo; Claude Sonnet 5.5 Medium: 30.8 AA, ~25 tasks/mo).
+
+3. **Codex Free Baseline (Optional Comparison):**
+   - GPT-6 Luna on Codex Free delivers ~$1.39–$1.62/month equivalent API value (~22 tasks/mo at High [21.4 AA], ~13 tasks/mo at xHigh [23.5 AA]). Paid ChatGPT Plus/Pro and Claude Pro/Max benchmarks are planned next.
+
+## Blog Posts
+
+- [Gemini 4 Neon vs. Hydrogen in Antigravity: Why Neon First Wins on Quota & Intelligence](https://data-john.github.io/SubscriptionBench/blog/neon-vs-hydrogen-antigravity.html): Empirical comparison of Neon vs Hydrogen weekly quota usage and Pareto strategy for Antigravity users.
+
+## Structured Data
+
+- [Full JSON Dataset](https://data-john.github.io/SubscriptionBench/data/benchmark_data.json): Machine-readable measured cycles, 95% confidence intervals, effort-scaled projections, and token-weighted baselines.

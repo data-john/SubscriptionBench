@@ -36,6 +36,7 @@
         <a href="#pareto">Pareto Chart</a>
         <a href="#monthly-tasks">Tasks / Month</a>
         <a href="#planner">Quota Planner</a>
+        <a href="./blog/">Blog</a>
         <a href="#deep-dive">Data &amp; Methodology</a>
       </nav>
       <div class="topbar-actions">
@@ -103,17 +104,23 @@
       </div>
 
       <div class="controls-row">
-        <div class="segmented" id="era-toggle" role="group" aria-label="Timeframe">
-          <button type="button" data-value="compare" class="active">Compare Nov 7 → Today</button>
-          <button type="button" data-value="current">Today Only</button>
-          <button type="button" data-value="nov7">Nov 7 Baseline</button>
+        <div class="control-group">
+          <div class="segmented" id="era-toggle" role="group" aria-label="Timeframe">
+            <button type="button" data-value="compare" class="active">Compare Nov 7 → Today</button>
+            <button type="button" data-value="current">Today Only</button>
+            <button type="button" data-value="nov7">Nov 7 Baseline</button>
+          </div>
+
+          <div class="segmented" id="scope-toggle" role="group" aria-label="Antigravity pool filter">
+            <button type="button" data-value="pro" class="active">All Antigravity</button>
+            <button type="button" data-value="gemini">Gemini Pool Only</button>
+          </div>
         </div>
 
-        <div class="segmented" id="scope-toggle" role="group" aria-label="Subscription scope">
-          <button type="button" data-value="all" class="active">All Tested Models</button>
-          <button type="button" data-value="pro">Google AI Pro Only</button>
-          <button type="button" data-value="gemini">Gemini Pool Only</button>
-        </div>
+        <label class="check-toggle">
+          <input type="checkbox" id="toggle-codex-free" />
+          Include GPT-6 Luna (Codex Free)
+        </label>
       </div>
 
       <div id="pareto-chart" class="plot-wrap" aria-label="Intelligence vs Monthly Task Capacity Chart"></div>
@@ -149,7 +156,7 @@
       </details>
 
       <div class="takeaway-strip">
-        <strong>Key takeaway for Antigravity users:</strong> Start with <strong>Gemini 4 Neon</strong>. Even <strong>Neon Low</strong> (44.1 intelligence, ~352 tasks/mo) beats <strong>Hydrogen Medium</strong> (41.2 intelligence, ~263 tasks/mo). Only switch to <strong>Hydrogen Low</strong> (~718 tasks/mo) if you need maximum volume on simple tasks.
+        <strong>Key takeaway for Antigravity users:</strong> Start with <strong>Gemini 4 Neon</strong>. Even <strong>Neon Low</strong> (44.1 intelligence, ~352 tasks/mo) beats <strong>Hydrogen Medium</strong> (41.2 intelligence, ~263 tasks/mo). Only switch to <strong>Hydrogen Low</strong> (~718 tasks/mo) if you need maximum volume on simple tasks. <a href="./blog/neon-vs-hydrogen-antigravity.html">Read the full write-up →</a>
       </div>
     </section>
 
@@ -165,16 +172,23 @@
       </div>
 
       <div class="controls-row">
-        <div class="segmented" id="bar-metric-toggle" role="group" aria-label="Bar chart metric">
-          <button type="button" data-value="tasks" class="active">Tasks / Month</button>
-          <button type="button" data-value="api">Equivalent API Value ($/mo)</button>
+        <div class="control-group">
+          <div class="segmented" id="bar-metric-toggle" role="group" aria-label="Bar chart metric">
+            <button type="button" data-value="tasks" class="active">Tasks / Month</button>
+            <button type="button" data-value="api">Equivalent API Value ($/mo)</button>
+          </div>
+
+          <div class="segmented" id="bar-filter-toggle" role="group" aria-label="Model filter">
+            <button type="button" data-value="defaults" class="active">Key Models (Clean)</button>
+            <button type="button" data-value="current">All Current Efforts</button>
+            <button type="button" data-value="all">Include Nov 7 Legacy</button>
+          </div>
         </div>
 
-        <div class="segmented" id="bar-filter-toggle" role="group" aria-label="Model filter">
-          <button type="button" data-value="defaults" class="active">Key Models (Clean)</button>
-          <button type="button" data-value="current">All Current Efforts</button>
-          <button type="button" data-value="all">Include Nov 7 Legacy</button>
-        </div>
+        <label class="check-toggle">
+          <input type="checkbox" id="toggle-codex-free-bar" />
+          Include GPT-6 Luna (Codex Free)
+        </label>
       </div>
 
       <div id="bar-chart" class="plot-wrap-bar" aria-label="Monthly Tasks and API Value Bar Chart"></div>
@@ -390,8 +404,10 @@
         <strong>SubscriptionBench</strong> · Independent AI subscription benchmarks · Data snapshot <span id="footer-date">2026-11-19</span>
       </div>
       <div class="footer-links">
+        <a href="./blog/">Blog</a>
         <a id="footer-github" href="https://github.com/data-john/SubscriptionBench" target="_blank" rel="noopener noreferrer">GitHub Repo</a>
         <a id="footer-kofi" href="https://ko-fi.com/datajohn" target="_blank" rel="noopener noreferrer">Ko-fi</a>
+        <a href="./llms.txt">llms.txt</a>
         <a href="https://artificialanalysis.ai" target="_blank" rel="noopener noreferrer">Artificial Analysis</a>
       </div>
     </footer>

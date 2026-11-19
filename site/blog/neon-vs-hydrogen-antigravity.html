@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemini 4 Neon vs. Hydrogen in Antigravity: Which Model Gives More Value? — SubscriptionBench</title>
+  <meta
+    name="description"
+    content="Empirical weekly quota benchmark comparing Gemini 4 Neon vs Gemini 4 Hydrogen in Google Antigravity (Google AI Pro). Neon delivers 352 tasks/mo at Low, 154 at Medium, 78 at High, and 45 at xHigh—beating Hydrogen on both intelligence and quota."
+  />
+  <link rel="canonical" href="https://data-john.github.io/SubscriptionBench/blog/neon-vs-hydrogen-antigravity.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="Gemini 4 Neon vs. Hydrogen in Antigravity: Why Neon First Wins" />
+  <meta
+    property="og:description"
+    content="Real weekly quota testing shows Gemini 4 Neon gives more intelligence for less quota than Hydrogen across almost every reasoning level in Google Antigravity."
+  />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="../styles.css" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
+
+  <!-- Structured Data for Search Engines & AI Assistants -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "headline": "Gemini 4 Neon vs. Hydrogen in Antigravity: Why Neon First Wins on Quota & Intelligence",
+        "description": "Empirical weekly quota benchmark comparing Gemini 4 Neon and Gemini 4 Hydrogen in Google Antigravity on a Google AI Pro ($19.99/mo) subscription.",
+        "datePublished": "2026-11-19",
+        "dateModified": "2026-11-19",
+        "author": {
+          "@type": "Person",
+          "name": "Data John",
+          "url": "https://ko-fi.com/datajohn"
+        },
+        "mainEntityOfPage": "https://data-john.github.io/SubscriptionBench/blog/neon-vs-hydrogen-antigravity.html"
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Should I use Gemini 4 Neon or Gemini 4 Hydrogen in Google Antigravity?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Use Gemini 4 Neon first. On Google AI Pro, Neon shares the same weekly Gemini quota pool as Hydrogen but delivers higher Artificial Analysis Intelligence Index v5 scores and more tasks per month at every reasoning level above Hydrogen Low. For example, Neon Low (44.1 intelligence, ~352 tasks/month) beats Hydrogen Medium (41.2 intelligence, ~263 tasks/month), and Neon Medium (54.9 intelligence, ~154 tasks/month) beats Hydrogen xHigh (53.9 intelligence, ~66 tasks/month)."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How many tasks per month do you get with Gemini 4 Neon on Google AI Pro Antigravity?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Based on empirical multi-turn Antigravity quota testing scaled to Artificial Analysis Intelligence Index v5 tasks at full weekly utilization, Google AI Pro ($19.99/mo) delivers approximately 352 tasks/month on Neon Low (44.1 intelligence), 154 tasks/month on Neon Medium (54.9 intelligence), 78 tasks/month on Neon High (59.6 intelligence), and 45 tasks/month on Neon xHigh (61.4 intelligence)."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "When is Gemini 4 Hydrogen better than Gemini 4 Neon in Antigravity?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Gemini 4 Hydrogen is only on the Pareto frontier at Low reasoning (26.9 intelligence, ~718 tasks/month), which is useful only if you need maximum volume on simple tasks where lower intelligence is acceptable. For anything above Hydrogen Low, Neon is strictly better."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What is the API-equivalent value of Google AI Pro Antigravity?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Measured across real multi-turn Antigravity sessions, the main Gemini weekly quota pool delivers roughly $210 to $293/month in equivalent API usage on Gemini 4 Hydrogen and Neon (about 10.5x to 14.6x the $19.99/month subscription price), plus roughly $20/month in separate third-party Claude quota."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="../">
+        <span class="brand-mark">SB</span>
+        <span>SubscriptionBench</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="../#pareto">Pareto Chart</a>
+        <a href="../#monthly-tasks">Tasks / Month</a>
+        <a href="../#planner">Quota Planner</a>
+        <a href="./" style="color: var(--text); font-weight: 600;">Blog</a>
+      </nav>
+      <div class="topbar-actions">
+        <a class="btn-subtle" href="https://ko-fi.com/datajohn" target="_blank" rel="noopener noreferrer">
+          <span class="kofi-dot" aria-hidden="true"></span>
+          <span>Ko-fi</span>
+        </a>
+        <a class="btn-subtle" href="https://github.com/data-john/SubscriptionBench" target="_blank" rel="noopener noreferrer">
+          GitHub
+        </a>
+        <button id="theme-toggle" class="btn-subtle" type="button" aria-label="Toggle color theme">
+          Dark
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <article class="article-wrap">
+      <div class="breadcrumb">
+        <a href="../">Dashboard</a> / <a href="./">Blog</a> / Neon vs. Hydrogen in Antigravity
+      </div>
+
+      <header class="article-header">
+        <div class="post-meta">
+          <span class="pill-tag">Antigravity Strategy</span>
+          <time datetime="2026-11-19">Nov 19, 2026</time>
+          <span>· By Data John</span>
+          <span>· 3 min read</span>
+        </div>
+        <h1>Gemini 4 Neon vs. Hydrogen in Antigravity: Why Neon First Wins on Quota &amp; Intelligence</h1>
+      </header>
+
+      <!-- AI-Chat & Reader Friendly Quick Answer Box -->
+      <section class="tldr-box" aria-label="Quick answer summary">
+        <h2>Quick Answer (TL;DR)</h2>
+        <ul>
+          <li><strong>Switch to Gemini 4 Neon first:</strong> Neon gives higher intelligence for less weekly quota than Hydrogen at every reasoning level above Hydrogen Low.</li>
+          <li><strong>Monthly Google AI Pro ($19.99/mo) capacity on Neon:</strong> ~<strong>352</strong> tasks/mo (Low · 44.1 intel), ~<strong>154</strong> tasks/mo (Medium · 54.9 intel), ~<strong>78</strong> tasks/mo (High · 59.6 intel), and ~<strong>45</strong> tasks/mo (xHigh · 61.4 intel).</li>
+          <li><strong>Only exception:</strong> <strong>Hydrogen Low</strong> (~718 tasks/mo · 26.9 intel) if you just want maximum raw volume on simple tasks.</li>
+        </ul>
+      </section>
+
+      <div class="article-body">
+        <p>
+          The release of <strong>Gemini 4 Neon</strong> provides a new and better option for vibe-coders using Google's Antigravity. Analysis shows that Neon gives more intelligence for less quota than all of the Gemini 4 predecessors. For anything above Gemini 4 Hydrogen on Low reasoning, Neon will get more done, with a higher Artificial Analysis Intelligence score.
+        </p>
+
+        <p>
+          I wanted to see how much you could actually get done with different models in Antigravity without running into the weekly limit. To do this I measured how quickly each model uses the weekly limit and compared that to the results on Artificial Analysis. The result is this graph, showing the number of tasks in the Artificial Analysis suite each model can do in a month's worth of Google AI Pro subscription.
+        </p>
+
+        <!-- Embedded Live Interactive Chart -->
+        <figure class="article-chart-card">
+          <figcaption>
+            <div class="article-chart-title">Antigravity Models: Intelligence vs. Monthly Task Capacity</div>
+            <p class="article-chart-sub">
+              Interactive chart (Google AI Pro · Nov 19, 2026). Hover any point for exact numbers, or <a href="../">open the full interactive dashboard</a> to compare Nov 7 baselines and plan your quota mix.
+            </p>
+          </figcaption>
+          <div id="post-pareto-chart" style="width:100%; min-height:400px;"></div>
+        </figure>
+
+        <p>
+          The <strong>"Pareto line"</strong> shows where you get the most tasks done at the highest intelligence level. If you want above GPT-6 Luna intelligence, Neon is always the best choice. You get <strong>352 tasks/month @ Low</strong>, <strong>154 tasks/month @ Medium</strong>, <strong>78 @ High</strong>, and <strong>45 @ xHigh</strong> reasoning levels. Time to switch to Neon, without needing to worry about usage.
+        </p>
+
+        <h2>Neon vs. Hydrogen: Side-by-Side Numbers</h2>
+        <p>
+          Because Neon and Hydrogen share the same weekly Gemini quota on Google AI Pro, you can compare them directly. Notice how Neon dominates Hydrogen at both lower and higher reasoning tiers:
+        </p>
+
+        <div class="table-scroll" style="margin: 18px 0 24px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Model &amp; Reasoning</th>
+                <th class="num-col">Intelligence (AA v5)</th>
+                <th class="num-col">Est. Tasks / Month</th>
+                <th class="num-col">On Pareto Frontier?</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Gemini 4 Neon (xHigh)</strong></td>
+                <td class="num-col"><strong>61.4</strong></td>
+                <td class="num-col"><strong>45</strong></td>
+                <td class="num-col"><span class="badge badge-pareto">Yes</span></td>
+              </tr>
+              <tr>
+                <td><strong>Gemini 4 Neon (High)</strong></td>
+                <td class="num-col"><strong>59.6</strong></td>
+                <td class="num-col"><strong>78</strong></td>
+                <td class="num-col"><span class="badge badge-pareto">Yes</span></td>
+              </tr>
+              <tr>
+                <td><strong>Gemini 4 Neon (Medium)</strong></td>
+                <td class="num-col"><strong>54.9</strong></td>
+                <td class="num-col"><strong>154</strong></td>
+                <td class="num-col"><span class="badge badge-pareto">Yes</span></td>
+              </tr>
+              <tr>
+                <td>Gemini 4 Hydrogen (xHigh)</td>
+                <td class="num-col">53.9</td>
+                <td class="num-col">66</td>
+                <td class="num-col">No (beaten by Neon Med)</td>
+              </tr>
+              <tr>
+                <td>Gemini 4 Hydrogen (High)</td>
+                <td class="num-col">50.8</td>
+                <td class="num-col">112</td>
+                <td class="num-col">No (beaten by Neon Med)</td>
+              </tr>
+              <tr>
+                <td><strong>Gemini 4 Neon (Low)</strong></td>
+                <td class="num-col"><strong>44.1</strong></td>
+                <td class="num-col"><strong>352</strong></td>
+                <td class="num-col"><span class="badge badge-pareto">Yes</span></td>
+              </tr>
+              <tr>
+                <td>Gemini 4 Hydrogen (Medium)</td>
+                <td class="num-col">41.2</td>
+                <td class="num-col">263</td>
+                <td class="num-col">No (beaten by Neon Low)</td>
+              </tr>
+              <tr>
+                <td><strong>Gemini 4 Hydrogen (Low)</strong></td>
+                <td class="num-col"><strong>26.9</strong></td>
+                <td class="num-col"><strong>718</strong></td>
+                <td class="num-col"><span class="badge badge-pareto">Yes (Max Volume)</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          Want to model your own realistic weekly usage (e.g., 60–80% utilization with 5-hour cap limits) or check the equivalent API dollar value? Try the <a href="../#planner">interactive Monthly Quota Planner</a> or inspect the <a href="../#deep-dive">full dataset and methodology</a>.
+        </p>
+
+        <h2>Frequently Asked Questions</h2>
+        <div class="faq-list">
+          <div class="faq-item">
+            <h3>Should I use Gemini 4 Neon or Hydrogen in Google Antigravity?</h3>
+            <p>
+              Use <strong>Gemini 4 Neon</strong> by default. Neon Low (44.1 intelligence, ~352 tasks/mo) beats Hydrogen Medium (41.2 intelligence, ~263 tasks/mo), and Neon Medium (54.9 intelligence, ~154 tasks/mo) beats Hydrogen xHigh (53.9 intelligence, ~66 tasks/mo) by 2.3×.
+            </p>
+          </div>
+          <div class="faq-item">
+            <h3>When should I still pick Gemini 4 Hydrogen?</h3>
+            <p>
+              Only on <strong>Hydrogen Low</strong> (~718 tasks/mo, 26.9 intelligence) when you're doing simple, repetitive tasks and want the maximum possible task count from your weekly allowance.
+            </p>
+          </div>
+          <div class="faq-item">
+            <h3>What about Claude models in Antigravity?</h3>
+            <p>
+              Google AI Pro includes a separate weekly third-party quota pool for Claude Sonnet 5.5 and Opus 5.5 (roughly $20/mo in equivalent API value — about 8 tasks/mo on Opus 5.5 Medium or 25 tasks/mo on Sonnet 5.5 Medium). Treat it as a useful bonus pool alongside Neon rather than your main daily driver.
+            </p>
+          </div>
+          <div class="faq-item">
+            <h3>Are these numbers theoretical or measured?</h3>
+            <p>
+              They are anchored on real multi-turn Antigravity sessions running autonomous coding tasks in Docker, measuring exact weekly quota burn against API token cost, then scaled onto Artificial Analysis Intelligence Index v5 tasks. All code and raw CSVs are open-source on <a href="https://github.com/data-john/SubscriptionBench" target="_blank" rel="noopener noreferrer">GitHub</a>.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <section class="support-strip" aria-label="Support future benchmarks">
+        <div class="support-copy">
+          <strong>Found this useful? Help fund the Claude &amp; Codex comparisons</strong>
+          <span>
+            SubscriptionBench is independent and self-funded. Tips on Ko-fi go directly toward testing Claude Pro/Max and ChatGPT Plus/Pro (Codex) with the exact same methodology.
+          </span>
+        </div>
+        <a class="btn-kofi" href="https://ko-fi.com/datajohn" target="_blank" rel="noopener noreferrer">
+          <span class="kofi-dot" aria-hidden="true"></span>
+          <span>Support on Ko-fi</span>
+        </a>
+      </section>
+
+      <footer class="footer">
+        <div><strong>SubscriptionBench</strong> · Published Nov 19, 2026</div>
+        <div class="footer-links">
+          <a href="../">Interactive Dashboard</a>
+          <a href="./">All Posts</a>
+          <a href="https://github.com/data-john/SubscriptionBench" target="_blank" rel="noopener noreferrer">GitHub Repo</a>
+          <a href="https://ko-fi.com/datajohn" target="_blank" rel="noopener noreferrer">Ko-fi</a>
+        </div>
+      </footer>
+    </article>
+  </main>
+
+  <script>
+    (function () {
+      const EFFORT_LABEL = { low: "Low", medium: "Medium", high: "High", xhigh: "xHigh", max: "Max" };
+      const FRIENDLY_POOL = {
+        "gemini-weekly": "Google AI Pro (Gemini)",
+        "3p-weekly": "Google AI Pro (Claude Bonus)",
+      };
+      let cachedData = null;
+
+      function getThemeColors() {
+        const dark = document.documentElement.getAttribute("data-theme") === "dark";
+        return {
+          text: dark ? "#e2e8f0" : "#0f172a",
+          muted: dark ? "#94a3b8" : "#64748b",
+          grid: dark ? "#1e293b" : "#e2e8f0",
+          surface: dark ? "#111827" : "#ffffff",
+          pareto: dark ? "#f8fafc" : "#0f172a",
+        };
+      }
+
+      function computePareto(pts) {
+        const sorted = [...pts].sort((a, b) => b.tasks_per_month_primary - a.tasks_per_month_primary);
+        const out = [];
+        let maxY = -Infinity;
+        for (const p of sorted) {
+          if (p.aa_intelligence > maxY + 1e-9) {
+            out.push(p);
+            maxY = p.aa_intelligence;
+          }
+        }
+        return out.sort((a, b) => a.tasks_per_month_primary - b.tasks_per_month_primary);
+      }
+
+      function renderMiniPareto() {
+        if (!cachedData || typeof Plotly === "undefined") return;
+        const colors = getThemeColors();
+        const pts = cachedData.projections.filter(
+          (p) => p.era === "current" && p.weekly_bucket !== "codex-30d"
+        );
+        const families = new Map();
+        for (const p of pts) {
+          if (!families.has(p.family_key)) families.set(p.family_key, []);
+          families.get(p.family_key).push(p);
+        }
+
+        const traces = [];
+        for (const [fk, rows] of families.entries()) {
+          const sorted = [...rows].sort((a, b) => a.effort_order - b.effort_order);
+          const color = sorted[0].color;
+          const label = sorted[0].family_label;
+          traces.push({
+            type: "scatter",
+            mode: "lines",
+            legendgroup: fk,
+            showlegend: false,
+            x: sorted.map((r) => r.tasks_per_month_primary),
+            y: sorted.map((r) => r.aa_intelligence),
+            line: { color, width: 2 },
+            opacity: 0.72,
+            hoverinfo: "skip",
+          });
+          const hoverFn = (r) =>
+            `<b>${r.family_label} (${EFFORT_LABEL[r.effort] || r.effort})</b><br>` +
+            `${FRIENDLY_POOL[r.weekly_bucket] || r.weekly_bucket}<br>` +
+            `Intelligence: <b>${r.aa_intelligence.toFixed(1)}</b> · Capacity: <b>~${Math.round(r.tasks_per_month_primary)} tasks/mo</b>`;
+          const measured = sorted.filter((r) => r.measured);
+          const scaled = sorted.filter((r) => !r.measured);
+          if (measured.length) {
+            traces.push({
+              type: "scatter",
+              mode: "markers",
+              name: label,
+              legendgroup: fk,
+              x: measured.map((r) => r.tasks_per_month_primary),
+              y: measured.map((r) => r.aa_intelligence),
+              text: measured.map(hoverFn),
+              hovertemplate: "%{text}<extra></extra>",
+              marker: { size: 11, color, line: { color: colors.surface, width: 1.5 } },
+            });
+          }
+          if (scaled.length) {
+            traces.push({
+              type: "scatter",
+              mode: "markers",
+              name: label,
+              legendgroup: fk,
+              showlegend: measured.length === 0,
+              x: scaled.map((r) => r.tasks_per_month_primary),
+              y: scaled.map((r) => r.aa_intelligence),
+              text: scaled.map(hoverFn),
+              hovertemplate: "%{text}<extra></extra>",
+              marker: { size: 9.5, color: colors.surface, line: { color, width: 2.2 } },
+            });
+          }
+        }
+
+        const frontier = computePareto(pts);
+        traces.push({
+          type: "scatter",
+          mode: "lines",
+          name: "Pareto Line",
+          x: frontier.map((p) => p.tasks_per_month_primary),
+          y: frontier.map((p) => p.aa_intelligence),
+          line: { color: colors.pareto, width: 2.4 },
+          hoverinfo: "skip",
+        });
+
+        const annotations = frontier.map((p) => ({
+          x: Math.log10(p.tasks_per_month_primary),
+          y: p.aa_intelligence,
+          text: `${p.family_label.replace("Gemini 4 ", "")} ${EFFORT_LABEL[p.effort] || p.effort}`,
+          showarrow: false,
+          xanchor: "left",
+          yanchor: "bottom",
+          xshift: 7,
+          yshift: 4,
+          font: { size: 11, color: colors.text, family: "Inter, sans-serif" },
+          bgcolor: colors.surface,
+          opacity: 0.9,
+        }));
+
+        Plotly.react(
+          "post-pareto-chart",
+          traces,
+          {
+            paper_bgcolor: "rgba(0,0,0,0)",
+            plot_bgcolor: "rgba(0,0,0,0)",
+            font: { color: colors.text, family: "Inter, sans-serif", size: 12 },
+            margin: { t: 14, r: 20, b: 54, l: 54 },
+            hovermode: "closest",
+            hoverlabel: { bgcolor: colors.surface, bordercolor: colors.grid, font: { color: colors.text } },
+            xaxis: {
+              title: { text: "Estimated Tasks per Month (Log Scale)", standoff: 10 },
+              type: "log",
+              gridcolor: colors.grid,
+              tickfont: { color: colors.muted },
+            },
+            yaxis: {
+              title: { text: "Intelligence Score (AA v5)", standoff: 8 },
+              gridcolor: colors.grid,
+              tickfont: { color: colors.muted },
+              range: [22, 66],
+            },
+            legend: { orientation: "h", y: -0.22, x: 0, font: { size: 11.5 } },
+            annotations,
+          },
+          { responsive: true, displaylogo: false, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] }
+        );
+      }
+
+      const saved = localStorage.getItem("subbench-theme") || "light";
+      const btn = document.getElementById("theme-toggle");
+      function applyTheme(t) {
+        document.documentElement.setAttribute("data-theme", t);
+        localStorage.setItem("subbench-theme", t);
+        if (btn) btn.textContent = t === "dark" ? "Light" : "Dark";
+        renderMiniPareto();
+      }
+      applyTheme(saved);
+      if (btn) {
+        btn.addEventListener("click", () =>
+          applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark")
+        );
+      }
+
+      window.addEventListener("DOMContentLoaded", async () => {
+        const resp = await fetch("../data/benchmark_data.json");
+        cachedData = await resp.json();
+        renderMiniPareto();
+      });
+    })();
+  </script>
+</body>
+</html>
