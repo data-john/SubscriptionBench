@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SubscriptionBench — Antigravity Quota, Intelligence &amp; API-Equivalent Benchmark</title>
+  <meta
+    name="description"
+    content="Empirical subscription quota and intelligence-per-dollar benchmark for Google AI Pro Antigravity (Gemini 4 Neon, Hydrogen, Argon, 3.8 Flash, Claude 5.5 3P) and Codex Free."
+  />
+  <meta property="og:title" content="SubscriptionBench — Antigravity Quota &amp; API-Equivalent Benchmark" />
+  <meta
+    property="og:description"
+    content="Empirical multi-turn quota testing showing how Google AI Pro Antigravity value jumped with Gemini 4 Hydrogen &amp; Neon—and why Neon-first dominates the Pareto frontier."
+  />
+  <meta property="og:type" content="website" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
+  <script src="./config.js" defer></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#top">
+        <span class="brand-mark">SB</span>
+        <span>SubscriptionBench</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#pareto">Pareto Frontier</a>
+        <a href="#api-value">API Value</a>
+        <a href="#planner">Quota Planner</a>
+        <a href="#data-table">Data</a>
+        <a href="#methodology">Methodology</a>
+      </nav>
+      <div class="topbar-actions">
+        <a id="nav-kofi" class="btn-subtle kofi-chip" href="https://ko-fi.com/YOUR_KOFI_HANDLE" target="_blank" rel="noopener noreferrer">
+          <span class="kofi-dot" aria-hidden="true"></span>
+          <span>Ko-fi</span>
+        </a>
+        <a id="nav-github" class="btn-subtle" href="https://github.com/YOUR_USERNAME/SubscriptionBench" target="_blank" rel="noopener noreferrer">
+          GitHub
+        </a>
+        <button id="theme-toggle" class="btn-subtle" type="button" aria-label="Toggle color theme">
+          Dark
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="top" class="container">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-eyebrow">
+        <span class="pill-tag">Empirical Multi-Turn Benchmark</span>
+        <span id="meta-snapshot">AA Intelligence Index v5 · Snapshot 2026-11-19</span>
+      </div>
+      <h1>Antigravity Subscription Throughput &amp; API-Equivalent Value</h1>
+      <p class="hero-lead">
+        How much frontier coding intelligence does a <strong>$19.99/mo Google AI Pro</strong> subscription actually deliver in
+        <strong>Antigravity</strong>? Using real multi-turn agent sessions calibrated against
+        <strong>Artificial Analysis Intelligence Index v5</strong>, we measure true quota burn, monthly task capacity, and implied API-equivalent value across models and effort levels.
+      </p>
+
+      <!-- KPI Strip -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Implied API Value (gemini-weekly)</div>
+          <div class="kpi-value tabular">$210–$293 <span class="kpi-unit">/mo</span></div>
+          <div class="kpi-sub">Measured on Gemini 4 Hydrogen &amp; Neon (~$441–$480/mo on legacy 3.8 Flash), plus ~$20/mo on the separate 3P Claude pool.</div>
+          <span class="kpi-badge positive tabular">~10.5×–14.6× vs. $19.99/mo Pro</span>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Neon-First Default (Medium)</div>
+          <div class="kpi-value tabular">54.9 <span class="kpi-unit">AA · 154 tasks/mo</span></div>
+          <div class="kpi-sub">Beats Hydrogen xhigh (53.9 AA @ 66 tasks/mo) by <strong>2.3× throughput</strong> at higher intelligence.</div>
+          <span class="kpi-badge positive">Dominates Pareto Frontier</span>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">High-Throughput Frontier (Neon Low)</div>
+          <div class="kpi-value tabular">44.1 <span class="kpi-unit">AA · 352 tasks/mo</span></div>
+          <div class="kpi-sub">Strictly dominates Hydrogen medium (41.2 AA @ 263 tasks/mo). Hydrogen low (26.9 @ 718) is the sole high-volume exception.</div>
+          <span class="kpi-badge">Measured Cycle 10</span>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">2-Week Frontier Jump (Nov 7 → 19)</div>
+          <div class="kpi-value tabular">+11.0 <span class="kpi-unit">AA · 3× tasks</span></div>
+          <div class="kpi-sub">Peak intelligence rose from Argon High (50.4 AA @ 15/mo) to Neon xHigh (61.4 AA @ 45/mo) and Neon High (59.6 @ 78/mo).</div>
+          <span class="kpi-badge positive">Nov 7 vs. Nov 19 Shift</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 1: Interactive Pareto Frontier -->
+    <section id="pareto" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Intelligence vs. Monthly Task Capacity (Pareto Frontier)</h2>
+          <p class="section-desc">
+            Higher and further right is better. Toggle between <strong>Nov 7 Baseline</strong> and <strong>Nov 18–19 Current</strong> to see the value jump, or switch between real multi-turn <code>agy</code> sessions and theoretical token-only projections.
+          </p>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="control-group">
+          <span class="control-label">Metric</span>
+          <div class="segmented" id="metric-toggle" role="group" aria-label="Projection method">
+            <button type="button" data-value="primary" class="active">Primary (Real agy)</button>
+            <button type="button" data-value="token">Token-Weighted (Theoretical)</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <span class="control-label">Timeline</span>
+          <div class="segmented" id="era-toggle" role="group" aria-label="Timeline filter">
+            <button type="button" data-value="compare" class="active">Compare Nov 7 → 19</button>
+            <button type="button" data-value="current">Current Only</button>
+            <button type="button" data-value="nov7">Nov 7 Baseline</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <span class="control-label">X-Axis</span>
+          <div class="segmented" id="scale-toggle" role="group" aria-label="X-axis scale">
+            <button type="button" data-value="log" class="active">Log</button>
+            <button type="button" data-value="linear">Linear</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <span class="control-label">Pools</span>
+          <div class="pool-pills" id="pool-filters">
+            <label class="pool-pill active"><input type="checkbox" value="gemini-weekly" checked />gemini-weekly</label>
+            <label class="pool-pill active"><input type="checkbox" value="gemini-argon-wtu-weekly" checked />argon-weekly</label>
+            <label class="pool-pill active"><input type="checkbox" value="3p-weekly" checked />3p-weekly (Claude)</label>
+            <label class="pool-pill active"><input type="checkbox" value="codex-30d" checked />codex-30d (Free)</label>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label class="check-toggle"><input type="checkbox" id="toggle-pareto" checked /> Pareto line</label>
+          <label class="check-toggle"><input type="checkbox" id="toggle-curves" checked /> Effort curves</label>
+          <label class="check-toggle"><input type="checkbox" id="toggle-ci" /> 95% CIs (measured)</label>
+        </div>
+      </div>
+
+      <div id="pareto-chart" class="plot-wrap" aria-label="Interactive Pareto Frontier Scatter Plot"></div>
+
+      <div class="chart-footnote">
+        <div class="legend-inline">
+          <span class="legend-item"><span class="dot-solid"></span> Empirically measured cycle</span>
+          <span class="legend-item"><span class="dot-hollow"></span> Effort-scaled projection (AA cost ratio)</span>
+          <span class="legend-item"><span class="line-pareto"></span> Current Pareto frontier</span>
+          <span class="legend-item"><span class="line-pareto-dashed"></span> Nov 7 baseline frontier</span>
+        </div>
+        <span>Hover any point for full API-equivalent stats · Drag to zoom, double-click to reset</span>
+      </div>
+
+      <div class="insight-grid">
+        <div class="insight-box">
+          <h3>Takeaway 1: Go Neon-First on Antigravity</h3>
+          <p>
+            Because Gemini 4 Neon and Hydrogen share the same <code>gemini-weekly</code> quota pool, Neon's efficiency makes it strictly preferable across almost every intelligence target: <strong>Neon Low</strong> beats <strong>Hydrogen Medium</strong> on both intelligence (44.1 vs. 41.2) and volume (352 vs. 263/mo), while <strong>Neon Medium</strong> (54.9 @ 154/mo) beats <strong>Hydrogen xHigh</strong> (53.9 @ 66/mo) by 2.3×.
+          </p>
+        </div>
+        <div class="insight-box">
+          <h3>Takeaway 2: Rapid Subscription Value Expansion</h3>
+          <p>
+            On Nov 7, Google AI Pro capped out at 50.4 AA (15 tasks/mo on Argon High) or ~30.8 AA (57–77 tasks/mo on 3.8 Flash). Within two weeks, Hydrogen and Neon pushed the same $19.99/mo subscription up to <strong>61.4 AA</strong> while multiplying monthly task throughput by 3–5× at comparable intelligence.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 2: API-Equivalent Value & Pool Economics -->
+    <section id="api-value" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">API-Equivalent Value &amp; Pool Economics</h2>
+          <p class="section-desc">
+            Implied monthly API dollar value delivered per 100% weekly quota utilization (<code>API $ / burn_frac × 4.33</code>), measured directly from real multi-turn agent runs with 95% confidence intervals.
+          </p>
+        </div>
+        <div class="segmented" id="api-metric-toggle" role="group" aria-label="API chart metric">
+          <button type="button" data-value="usd" class="active">Implied API $/mo</button>
+          <button type="button" data-value="mult">Multiplier vs. $19.99</button>
+          <button type="button" data-value="burn">Burn per $1 API (pp)</button>
+        </div>
+      </div>
+
+      <div id="api-value-chart" class="plot-wrap-sm" aria-label="Implied Monthly API Value Chart"></div>
+
+      <div class="pool-grid">
+        <div class="pool-card">
+          <div class="pool-card-head">
+            <span class="pool-card-name">gemini-weekly</span>
+            <span class="badge badge-measured">Primary</span>
+          </div>
+          <div class="pool-card-val tabular">$210–$293/mo</div>
+          <p class="pool-card-desc">
+            Gemini 4 Neon &amp; Hydrogen implied API value (~10.5×–14.6× Pro price). Legacy 3.8 Flash implied $441–$480/mo at lower intelligence.
+          </p>
+        </div>
+        <div class="pool-card">
+          <div class="pool-card-head">
+            <span class="pool-card-name">3p-weekly</span>
+            <span class="badge badge-scaled">Bonus Pool</span>
+          </div>
+          <div class="pool-card-val tabular">~$20/mo</div>
+          <p class="pool-card-desc">
+            Tightly metered separate pool for Claude Sonnet 5.5 ($19.6/mo) and Opus 5.5 ($19.8/mo) — effectively ~1× Pro price in bonus 3P credit.
+          </p>
+        </div>
+        <div class="pool-card">
+          <div class="pool-card-head">
+            <span class="pool-card-name">argon-weekly</span>
+            <span class="badge badge-scaled">Legacy Nov 7</span>
+          </div>
+          <div class="pool-card-val tabular">$75/mo</div>
+          <p class="pool-card-desc">
+            Separate Nov 7 frontier pool for Gemini 4 Argon High ($48–$102 95% CI, 15 tasks/mo) before Neon superseded it on <code>gemini-weekly</code>.
+          </p>
+        </div>
+        <div class="pool-card">
+          <div class="pool-card-head">
+            <span class="pool-card-name">codex-30d</span>
+            <span class="badge badge-scaled">Free Baseline</span>
+          </div>
+          <div class="pool-card-val tabular">$1.39–$1.62/mo</div>
+          <p class="pool-card-desc">
+            Codex Free tier baseline (GPT-6 Luna, 1% integer quota increments). Paid ChatGPT Plus/Pro &amp; Claude Pro/Max cycles are next.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Interactive Monthly Quota & API-Equivalent Mix Planner -->
+    <section id="planner" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Interactive Monthly Quota &amp; API-Equivalent Planner</h2>
+          <p class="section-desc">
+            Model your real-world weekly utilization (accounting for 5-hour cap friction) and split your <code>gemini-weekly</code> allowance across Neon and Hydrogen effort levels to estimate monthly tasks and direct-API savings.
+          </p>
+        </div>
+      </div>
+
+      <div class="preset-row" id="planner-presets">
+        <button type="button" class="preset-btn active" data-preset="neon-balanced">Neon-First Balanced (Recommended)</button>
+        <button type="button" class="preset-btn" data-preset="neon-frontier">Max Frontier (Neon High/xHigh)</button>
+        <button type="button" class="preset-btn" data-preset="high-volume">High Volume (Neon Low + Hydrogen Low)</button>
+        <button type="button" class="preset-btn" data-preset="hydrogen-only">Hydrogen-Only (Comparison)</button>
+      </div>
+
+      <div class="planner-grid">
+        <div>
+          <div class="slider-row">
+            <div class="slider-head">
+              <strong>Effective Weekly Quota Utilization</strong>
+              <span class="mono tabular" id="val-util">75%</span>
+            </div>
+            <input type="range" id="sl-util" min="20" max="100" step="5" value="75" />
+          </div>
+
+          <hr class="planner-divider" />
+
+          <div class="slider-row">
+            <div class="slider-head">
+              <span><strong>Gemini 4 Neon (Medium)</strong> · AA 54.9</span>
+              <span class="mono tabular" id="val-neon-med">50%</span>
+            </div>
+            <input type="range" id="sl-neon-med" min="0" max="100" step="5" value="50" />
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-head">
+              <span><strong>Gemini 4 Neon (Low)</strong> · AA 44.1</span>
+              <span class="mono tabular" id="val-neon-low">30%</span>
+            </div>
+            <input type="range" id="sl-neon-low" min="0" max="100" step="5" value="30" />
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-head">
+              <span><strong>Gemini 4 Neon (High)</strong> · AA 59.6</span>
+              <span class="mono tabular" id="val-neon-high">20%</span>
+            </div>
+            <input type="range" id="sl-neon-high" min="0" max="100" step="5" value="20" />
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-head">
+              <span><strong>Gemini 4 Hydrogen (Medium)</strong> · AA 41.2</span>
+              <span class="mono tabular" id="val-hydro-med">0%</span>
+            </div>
+            <input type="range" id="sl-hydro-med" min="0" max="100" step="5" value="0" />
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-head">
+              <span><strong>Gemini 4 Hydrogen (Low)</strong> · AA 26.9</span>
+              <span class="mono tabular" id="val-hydro-low">0%</span>
+            </div>
+            <input type="range" id="sl-hydro-low" min="0" max="100" step="5" value="0" />
+          </div>
+
+          <hr class="planner-divider" />
+
+          <div class="control-group">
+            <label class="check-toggle">
+              <input type="checkbox" id="chk-include-3p" checked />
+              Include separate <code>3p-weekly</code> Claude bonus pool (Opus 5.5 Medium · +8 tasks/mo at 100%)
+            </label>
+          </div>
+        </div>
+
+        <div class="planner-results">
+          <h3>Projected Monthly Output</h3>
+          <div class="planner-stat-grid">
+            <div class="planner-stat">
+              <div class="planner-stat-label">Est. AA Tasks / mo</div>
+              <div class="planner-stat-val tabular" id="res-tasks">—</div>
+            </div>
+            <div class="planner-stat">
+              <div class="planner-stat-label">Task-Weighted AA Intel</div>
+              <div class="planner-stat-val tabular" id="res-intel">—</div>
+            </div>
+            <div class="planner-stat">
+              <div class="planner-stat-label">Equivalent Direct API</div>
+              <div class="planner-stat-val tabular" id="res-api-usd">—</div>
+            </div>
+            <div class="planner-stat">
+              <div class="planner-stat-label">Effective API Multiplier</div>
+              <div class="planner-stat-val tabular" id="res-mult">—</div>
+            </div>
+          </div>
+          <div class="planner-breakdown" id="res-breakdown"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: Complete Data Table -->
+    <section id="data-table" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Complete Benchmark Dataset</h2>
+          <p class="section-desc">
+            Click any column header to sort. Switch between all 28 effort-level projections and the 11 empirically measured Subbench cycles.
+          </p>
+        </div>
+      </div>
+
+      <div class="table-controls">
+        <div class="control-group">
+          <div class="segmented" id="table-view-toggle" role="group" aria-label="Table view">
+            <button type="button" data-value="projections" class="active">Effort Projections (28)</button>
+            <button type="button" data-value="measured">Measured Cycles (11)</button>
+          </div>
+          <input
+            type="search"
+            id="table-search"
+            class="search-input"
+            placeholder="Filter model, pool, or effort…"
+            aria-label="Filter table rows"
+          />
+        </div>
+        <button type="button" id="btn-download-csv" class="btn-subtle">Download CSV</button>
+      </div>
+
+      <div class="table-scroll">
+        <table class="data-table" id="benchmark-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Subtle Ko-fi Support Strip -->
+    <section class="support-strip" aria-label="Support future benchmarks">
+      <div class="support-copy">
+        <strong>Help fund the next cross-subscription comparison</strong>
+        <span>
+          SubscriptionBench is independent and self-funded. Contributions go directly toward paid subscription tiers for upcoming head-to-head runs on <strong>Claude Pro/Max</strong> and <strong>ChatGPT Plus/Pro (Codex)</strong>.
+        </span>
+      </div>
+      <a id="banner-kofi" class="btn-kofi" href="https://ko-fi.com/YOUR_KOFI_HANDLE" target="_blank" rel="noopener noreferrer">
+        <span class="kofi-dot" aria-hidden="true"></span>
+        <span>Support on Ko-fi</span>
+      </a>
+    </section>
+
+    <!-- Section 5: Methodology & Caveats -->
+    <section id="methodology" class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Methodology, Calibration &amp; Caveats</h2>
+          <p class="section-desc">
+            Full code, experiment configs, and raw report CSVs are open-source in the repository so anyone can audit or reproduce the numbers.
+          </p>
+        </div>
+      </div>
+
+      <div class="method-grid">
+        <div class="method-block">
+          <h3>1. Primary Projection (Real Multi-Turn Subbench)</h3>
+          <p>
+            Subbench runs autonomous coding tasks inside isolated Docker containers using real <code>agy</code> / <code>codex</code> sessions, recording exact token usage and net contiguous quota burn (netting inter-attempt backend recredits). When a <code>5h</code> bucket is present, weekly-equivalent burn uses <code>5h / ratio</code> (<code>3.50</code> for <code>gemini-5h</code>, <code>2.00</code> for <code>3p-5h</code>).
+          </p>
+          <code class="formula">Implied Pool $/mo = (api_cost_usd / total_burn_frac) × 4.33</code>
+          <code class="formula">AA Tasks/mo = Implied Pool $/mo ÷ AA_II_v5_cost_per_task</code>
+          <p>
+            Because SWE-bench task difficulty cancels out of the API-cost-to-burn ratio, monthly throughput scales cleanly onto Artificial Analysis Intelligence Index v5 tasks while preserving real multi-turn harness and caching overhead.
+          </p>
+        </div>
+
+        <div class="method-block">
+          <h3>2. Alternative Projection (Theoretical Token-Only)</h3>
+          <p>
+            To isolate provider quota metering from harness overhead, we run 3 synthetic probes (<code>input_heavy</code>, <code>output_heavy</code>, <code>cache_heavy</code>) per model and fit non-negative least-squares weights <code>(w_in, w_cache, w_out)</code> in weekly percentage points per 1M tokens, then multiply by AA's public per-task token mix:
+          </p>
+          <code class="formula">burn_per_task_pp = w_in·T_unc + w_cache·T_cache + w_out·T_out</code>
+          <code class="formula">Token-Weighted Tasks/mo = (100 × 4.33) ÷ burn_per_task_pp</code>
+          <p>
+            On Gemini 4 Neon, real multi-turn <code>agy</code> sessions burn ~15–35% more quota than synthetic 3-prompt weights predict (<code>Subbench / Token-Weighted = 0.69×–0.83×</code>), making Primary the realistic user throughput and Token-Weighted an upper-bound baseline.
+          </p>
+        </div>
+
+        <div class="method-block">
+          <h3>3. Uncertainty &amp; Effort Scaling</h3>
+          <ul>
+            <li><strong>95% Confidence Intervals:</strong> Leave-one-out Student-t jackknife across valid attempts for continuous quota buckets; exact <code>±1 pp</code> quantization bounds for <code>codex-30d</code>.</li>
+            <li><strong>Effort Scaling:</strong> Unmeasured effort levels (hollow markers) are scaled from each family's measured anchor cycle using AA's exact per-effort <code>cost_per_task</code> ratio (Primary) or per-effort token breakdown (Token-Weighted).</li>
+            <li><strong>Settling:</strong> Cycles 4–10 pre-date post-attempt quota settling checks; numerical CIs are shown in tooltips and tables and can be toggled on the chart.</li>
+          </ul>
+        </div>
+
+        <div class="method-block">
+          <h3>4. Key Caveats &amp; Transparency</h3>
+          <ul>
+            <li><strong>Weekly Utilization:</strong> Baseline monthly figures (<code>× 4.33</code>) assume 100% weekly quota utilization without 5-hour cap waste. Use the interactive Quota Planner above to model realistic 50–80% utilization.</li>
+            <li><strong>Anthropic Cache-Write Reporting:</strong> <code>agy</code> does not separate <code>cache_write_tokens</code> from uncached input (~10–13% upper-bound shift on Claude models where cache write = 1.25× input).</li>
+            <li><strong>Weight Fallbacks:</strong> Models whose synthetic <code>input_heavy</code> probe was masked by a background recredit (<code>3.8 Flash</code>, <code>Hydrogen</code>) fall back to joint-fit weights in the Token-Weighted view.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div>
+        <strong>SubscriptionBench</strong> · Independent empirical AI coding subscription benchmarks · Data snapshot <span id="footer-date">2026-11-19</span>
+      </div>
+      <div class="footer-links">
+        <a id="footer-github" href="https://github.com/YOUR_USERNAME/SubscriptionBench" target="_blank" rel="noopener noreferrer">Source &amp; Methodology</a>
+        <a id="footer-kofi" href="https://ko-fi.com/YOUR_KOFI_HANDLE" target="_blank" rel="noopener noreferrer">Ko-fi</a>
+        <a href="https://artificialanalysis.ai" target="_blank" rel="noopener noreferrer">Artificial Analysis Index v5</a>
+      </div>
+    </footer>
+  </main>
+</body>
+</html>
