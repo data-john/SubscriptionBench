@@ -1066,3 +1066,42 @@ table.data-table tbody tr:last-child td {
   font-size: 14.5px;
   color: var(--text-secondary);
 }
+
+.tldr-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 12px;
+}
+
+.tldr-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.tldr-stat-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.tldr-stat-num {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.tldr-stat-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 640px) {
+  .tldr-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
