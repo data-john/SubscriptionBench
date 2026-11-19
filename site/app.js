@@ -1,32 +1,71 @@
 (() => {
   "use strict";
 
+  const FRIENDLY_POOL = {
+    "gemini-weekly": "Google AI Pro (Gemini)",
+    "gemini-argon-wtu-weekly": "Google AI Pro (Legacy Argon)",
+    "3p-weekly": "Google AI Pro (Claude Bonus)",
+    "codex-30d": "Codex Free",
+  };
+
+  const EFFORT_LABEL = {
+    "non-reasoning": "Non-reasoning",
+    low: "Low",
+    medium: "Medium",
+    high: "High",
+    xhigh: "xHigh",
+    max: "Max",
+  };
+
+  // Curated default set for the clean "Key Models" bar chart view
+  const KEY_MODEL_IDS = new Set([
+    "gemini-4-hydrogen@gemini-weekly:low",
+    "gemini-4-neon@gemini-weekly:low",
+    "gemini-4-hydrogen@gemini-weekly:medium",
+    "gemini-4-neon@gemini-weekly:medium",
+    "gemini-4-neon@gemini-weekly:high",
+    "gemini-4-neon@gemini-weekly:xhigh",
+    "claude-sonnet-5-5@3p-weekly:medium",
+    "claude-opus-5-5@3p-weekly:medium",
+    "gpt-6-luna@codex-30d:high",
+  ]);
+
   const state = {
     data: null,
     theme: localStorage.getItem("subbench-theme") || "light",
     metric: "primary", // "primary" | "token"
     era: "compare", // "compare" | "current" | "nov7"
+    scope: "all", // "all" | "pro" | "gemini"
     xScale: "log", // "log" | "linear"
-    pools: new Set([
-      "gemini-weekly",
-      "gemini-argon-wtu-weekly",
-      "3p-weekly",
-      "codex-30d",
-    ]),
-    showPareto: true,
     showCurves: true,
     showCI: false,
-    apiMetric: "usd", // "usd" | "mult" | "burn"
+    barMetric: "tasks", // "tasks" | "api"
+    barFilter: "defaults", // "defaults" | "current" | "all"
     tableView: "projections", // "projections" | "measured"
     tableSearch: "",
     tableSort: { key: "aa_intelligence", dir: "desc" },
   };
 
   const CFG = window.SUBBENCH_CONFIG || {
-    repoUrl: "https://github.com/YOUR_USERNAME/SubscriptionBench",
-    kofiUrl: "https://ko-fi.com/YOUR_KOFI_HANDLE",
+    repoUrl: "https://github.com/data-john/SubscriptionBench",
+    kofiUrl: "https://ko-fi.com/datajohn",
     subscriptionPriceUsd: 19.99,
   };
+
+  function friendlyPool(pool) {
+    return FRIENDLY_POOL[pool] || pool;
+  }
+
+  function friendlyEffort(effort) {
+    return EFFORT_LABEL[effort] || effort;
+  }
+
+  function friendlyMeasuredName(r) {
+    const clean = (r.aa_name || r.config_label).replace(", Default Fallback", "");
+    const suffix = r.weekly_bucket === "codex-30d" ? " · Codex Free" : "";
+    const eraTag = r.era === "nov7" ? " (Nov 7)" : "";
+    return `${clean}${eraTag}${suffix}`;
+  }
 
   function applyConfigLinks() {
     const setHref = (id, url) => {
@@ -35,6 +74,7 @@
     };
     setHref("nav-github", CFG.repoUrl);
     setHref("footer-github", CFG.repoUrl);
+    setHref("method-github", CFG.repoUrl);
     setHref("nav-kofi", CFG.kofiUrl);
     setHref("banner-kofi", CFG.kofiUrl);
     setHref("footer-kofi", CFG.kofiUrl);
@@ -48,7 +88,7 @@
     if (btn) btn.textContent = theme === "dark" ? "Light" : "Dark";
     if (state.data) {
       renderParetoChart();
-      renderApiChart();
+      renderBarChart();
     }
   }
 
@@ -73,12 +113,10 @@
       : row.tasks_per_month_primary;
   }
 
-  // Compute upper-right Pareto frontier (maximize both X=tasks and Y=intelligence)
   function computePareto(points, metric = state.metric) {
     const valid = points.filter(
       (p) => tasksValue(p, metric) != null && p.aa_intelligence != null
     );
-    // Sort by X descending, then Y descending
     const sorted = [...valid].sort((a, b) => {
       const dx = tasksValue(b, metric) - tasksValue(a, metric);
       if (Math.abs(dx) > 1e-9) return dx;
@@ -92,7 +130,6 @@
         maxY = p.aa_intelligence;
       }
     }
-    // Return sorted by X ascending for clean line drawing
     return frontier.sort(
       (a, b) => tasksValue(a, metric) - tasksValue(b, metric)
     );
@@ -122,44 +159,33 @@
     );
   }
 
-  function buildHoverText(p) {
+  // Concise, non-technical hover tooltip (4 lines max)
+  function buildCleanHover(p) {
     const tVal = tasksValue(p);
-    const isPrimary = state.metric === "primary";
-    const ciLine =
-      isPrimary && p.tasks_mo_ci_low != null && p.tasks_mo_ci_high != null
-        ? `<br>95% CI: <b>${fmtInt(p.tasks_mo_ci_low)}–${fmtInt(p.tasks_mo_ci_high)}</b> tasks/mo`
-        : "";
     const apiLine =
       p.implied_pool_usd_per_month != null
-        ? `<br>Implied Pool API Value: <b>${fmtUsd(p.implied_pool_usd_per_month, 0)}/mo</b>` +
-          (p.api_multiplier ? ` (${p.api_multiplier.toFixed(1)}× Pro)` : "")
+        ? `<br>API-equivalent pool: <b>~${fmtUsd(p.implied_pool_usd_per_month, p.implied_pool_usd_per_month < 10 ? 2 : 0)}/mo</b>`
         : "";
-    const harnessLine =
-      !isPrimary && p.harness_ratio != null
-        ? `<br>Primary / Token-Weighted: <b>${p.harness_ratio.toFixed(2)}×</b>`
-        : "";
-    const src = p.measured
-      ? `Empirically measured (Cycle ${p.source_cycle_id}, ${p.source_date})`
-      : `Effort-scaled from Cycle ${p.source_cycle_id} (${p.source_config_label})`;
-
     return (
-      `<b>${p.family_label} (${p.effort})</b>` +
-      `<br>Pool: <code>${p.weekly_bucket}</code>` +
-      `<br>AA Intelligence v5: <b>${fmtNum(p.aa_intelligence, 1)}</b>` +
-      `<br>${isPrimary ? "Est. Tasks/mo (Real agy)" : "Token-Weighted Tasks/mo"}: <b>${fmtNum(tVal, 1)}</b>` +
-      ciLine +
-      `<br>AA Cost/Task: <b>${fmtUsd(p.aa_ii_cost_per_task, 4)}</b>` +
-      apiLine +
-      harnessLine +
-      `<br><span style="opacity:0.8">${src}</span>`
+      `<b>${p.family_label} (${friendlyEffort(p.effort)})</b>` +
+      `<br>${friendlyPool(p.weekly_bucket)}` +
+      `<br>Intelligence: <b>${fmtNum(p.aa_intelligence, 1)}</b>  ·  Capacity: <b>~${fmtInt(tVal)} tasks/mo</b>` +
+      apiLine
     );
   }
 
   function getFilteredProjections() {
     return state.data.projections.filter((p) => {
-      if (!state.pools.has(p.weekly_bucket)) return false;
       if (state.era === "current" && p.era !== "current") return false;
       if (state.era === "nov7" && p.era !== "nov7") return false;
+      if (state.scope === "pro" && p.weekly_bucket === "codex-30d") return false;
+      if (
+        state.scope === "gemini" &&
+        p.weekly_bucket !== "gemini-weekly" &&
+        p.weekly_bucket !== "gemini-argon-wtu-weekly"
+      ) {
+        return false;
+      }
       return true;
     });
   }
@@ -169,25 +195,29 @@
     const filtered = getFilteredProjections();
     const traces = [];
 
-    // Group by family_key
     const families = new Map();
     for (const p of filtered) {
       if (!families.has(p.family_key)) families.set(p.family_key, []);
       families.get(p.family_key).push(p);
     }
 
-    // Effort curves + markers per family
     for (const [fk, rows] of families.entries()) {
       const sorted = [...rows].sort((a, b) => a.effort_order - b.effort_order);
       const famLabel = sorted[0].family_label;
       const famColor = sorted[0].color;
       const isNov7 = sorted[0].era === "nov7";
+      const legendName =
+        sorted[0].weekly_bucket === "codex-30d"
+          ? `${famLabel} (Codex Free)`
+          : isNov7
+          ? `${famLabel} (Nov 7)`
+          : famLabel;
 
       if (state.showCurves && sorted.length > 1) {
         traces.push({
           type: "scatter",
           mode: "lines",
-          name: famLabel,
+          name: legendName,
           legendgroup: fk,
           showlegend: false,
           x: sorted.map((r) => tasksValue(r)),
@@ -197,7 +227,7 @@
             width: isNov7 ? 1.5 : 2,
             dash: isNov7 ? "dot" : "solid",
           },
-          opacity: isNov7 && state.era === "compare" ? 0.55 : 0.7,
+          opacity: isNov7 && state.era === "compare" ? 0.5 : 0.72,
           hoverinfo: "skip",
         });
       }
@@ -226,12 +256,12 @@
         traces.push({
           type: "scatter",
           mode: "markers",
-          name: `${famLabel}${isNov7 ? " (Nov 7)" : ""}`,
+          name: legendName,
           legendgroup: fk,
           showlegend: true,
           x: measured.map((r) => tasksValue(r)),
           y: measured.map((r) => r.aa_intelligence),
-          text: measured.map(buildHoverText),
+          text: measured.map(buildCleanHover),
           hovertemplate: "%{text}<extra></extra>",
           error_x: errX,
           marker: {
@@ -247,12 +277,12 @@
         traces.push({
           type: "scatter",
           mode: "markers",
-          name: `${famLabel}${isNov7 ? " (Nov 7)" : ""}`,
+          name: legendName,
           legendgroup: fk,
           showlegend: measured.length === 0,
           x: scaled.map((r) => tasksValue(r)),
           y: scaled.map((r) => r.aa_intelligence),
-          text: scaled.map(buildHoverText),
+          text: scaled.map(buildCleanHover),
           hovertemplate: "%{text}<extra></extra>",
           marker: {
             size: 9.5,
@@ -264,67 +294,60 @@
       }
     }
 
-    // Pareto frontier lines
     const annotations = [];
-    if (state.showPareto) {
-      if (state.era === "compare") {
-        const nov7Pts = filtered.filter((p) => p.era === "nov7");
-        const nov7Frontier = computePareto(nov7Pts);
-        if (nov7Frontier.length >= 2) {
-          traces.push({
-            type: "scatter",
-            mode: "lines",
-            name: "Nov 7 Baseline Frontier",
-            x: nov7Frontier.map((p) => tasksValue(p)),
-            y: nov7Frontier.map((p) => p.aa_intelligence),
-            line: { color: colors.paretoBaseline, width: 2, dash: "dash" },
-            hoverinfo: "skip",
-          });
-        }
-      }
-
-      const currentPoolPts =
-        state.era === "nov7"
-          ? filtered
-          : filtered.filter((p) => p.era === "current");
-      const currentFrontier = computePareto(
-        currentPoolPts.length ? currentPoolPts : filtered
-      );
-
-      if (currentFrontier.length >= 2) {
+    if (state.era === "compare") {
+      const nov7Pts = filtered.filter((p) => p.era === "nov7");
+      const nov7Frontier = computePareto(nov7Pts);
+      if (nov7Frontier.length >= 2) {
         traces.push({
           type: "scatter",
           mode: "lines",
-          name:
-            state.era === "nov7"
-              ? "Nov 7 Pareto Frontier"
-              : "Current Pareto Frontier",
-          x: currentFrontier.map((p) => tasksValue(p)),
-          y: currentFrontier.map((p) => p.aa_intelligence),
-          line: { color: colors.pareto, width: 2.4 },
+          name: "Nov 7 Frontier",
+          x: nov7Frontier.map((p) => tasksValue(p)),
+          y: nov7Frontier.map((p) => p.aa_intelligence),
+          line: { color: colors.paretoBaseline, width: 2, dash: "dash" },
           hoverinfo: "skip",
         });
+      }
+    }
 
-        // Label frontier points cleanly
-        for (const p of currentFrontier) {
-          const shortFam = p.family_label
-            .replace("Gemini 4 ", "")
-            .replace("Gemini 3.8 ", "")
-            .replace("Claude ", "");
-          annotations.push({
-            x: state.xScale === "log" ? Math.log10(tasksValue(p)) : tasksValue(p),
-            y: p.aa_intelligence,
-            text: `${shortFam} ${p.effort}`,
-            showarrow: false,
-            xanchor: "left",
-            yanchor: "bottom",
-            xshift: 7,
-            yshift: 4,
-            font: { size: 11, color: colors.text, family: "Inter, sans-serif" },
-            bgcolor: colors.surface,
-            opacity: 0.88,
-          });
-        }
+    const currentPoolPts =
+      state.era === "nov7"
+        ? filtered
+        : filtered.filter((p) => p.era === "current");
+    const currentFrontier = computePareto(
+      currentPoolPts.length ? currentPoolPts : filtered
+    );
+
+    if (currentFrontier.length >= 2) {
+      traces.push({
+        type: "scatter",
+        mode: "lines",
+        name: state.era === "nov7" ? "Nov 7 Frontier" : "Best-Value Frontier",
+        x: currentFrontier.map((p) => tasksValue(p)),
+        y: currentFrontier.map((p) => p.aa_intelligence),
+        line: { color: colors.pareto, width: 2.4 },
+        hoverinfo: "skip",
+      });
+
+      for (const p of currentFrontier) {
+        const shortFam = p.family_label
+          .replace("Gemini 4 ", "")
+          .replace("Gemini 3.8 ", "")
+          .replace("Claude ", "");
+        annotations.push({
+          x: state.xScale === "log" ? Math.log10(tasksValue(p)) : tasksValue(p),
+          y: p.aa_intelligence,
+          text: `${shortFam} ${friendlyEffort(p.effort)}`,
+          showarrow: false,
+          xanchor: "left",
+          yanchor: "bottom",
+          xshift: 7,
+          yshift: 4,
+          font: { size: 11, color: colors.text, family: "Inter, sans-serif" },
+          bgcolor: colors.surface,
+          opacity: 0.9,
+        });
       }
     }
 
@@ -332,14 +355,19 @@
       paper_bgcolor: colors.paper,
       plot_bgcolor: colors.plot,
       font: { color: colors.text, family: "Inter, sans-serif", size: 12 },
-      margin: { t: 22, r: 24, b: 56, l: 58 },
+      margin: { t: 20, r: 24, b: 56, l: 56 },
       hovermode: "closest",
+      hoverlabel: {
+        bgcolor: colors.surface,
+        bordercolor: colors.grid,
+        font: { color: colors.text, family: "Inter, sans-serif", size: 12.5 },
+      },
       xaxis: {
         title: {
           text:
             state.metric === "primary"
-              ? "Projected AA Tasks / Month (Real agy Multi-Turn)"
-              : "Theoretical Token-Weighted AA Tasks / Month",
+              ? "Estimated Tasks per Month"
+              : "Theoretical Token-Only Tasks per Month",
           standoff: 12,
         },
         type: state.xScale,
@@ -349,7 +377,7 @@
       },
       yaxis: {
         title: {
-          text: "Artificial Analysis Intelligence Index v5",
+          text: "Intelligence Score (Artificial Analysis v5)",
           standoff: 10,
         },
         gridcolor: colors.grid,
@@ -375,154 +403,208 @@
     });
   }
 
-  function renderApiChart() {
+  // Chart 2: Clean Interactive Bar Chart (Tasks / Month OR Equivalent API Value)
+  function renderBarChart() {
     const colors = getThemeColors();
-    const rows = [...state.data.measured_cycles];
+    const titleEl = document.getElementById("bar-title");
+    const descEl = document.getElementById("bar-desc");
+    const filterEl = document.getElementById("bar-filter-toggle");
+    const chartEl = document.getElementById("bar-chart");
 
-    const famColorFor = (r) => {
-      const id = r.model_id || "";
-      if (id.includes("neon")) return "#2563eb";
-      if (id.includes("hydrogen")) return "#0891b2";
-      if (id.includes("argon")) return "#7c3aed";
-      if (id.includes("3.8-flash")) return "#64748b";
-      if (id.includes("opus")) return "#d97706";
-      if (id.includes("sonnet")) return "#ea580c";
-      return "#16a34a";
-    };
+    if (state.barMetric === "tasks") {
+      titleEl.textContent = "Monthly Task Capacity by Model";
+      descEl.textContent =
+        "Estimated coding tasks you can complete per month from each model's included subscription quota (at full weekly usage).";
+      filterEl.style.display = "inline-flex";
 
-    const metricFn = (r) => {
-      if (state.apiMetric === "usd") return r.implied_pool_usd_per_month;
-      if (state.apiMetric === "mult")
-        return r.implied_pool_usd_per_month / CFG.subscriptionPriceUsd;
-      // Burn pp per $1 API spent
-      return r.weekly_burn_pp / r.api_cost_usd;
-    };
+      let rows = [...state.data.projections];
+      if (state.barFilter === "defaults") {
+        rows = rows.filter((r) => KEY_MODEL_IDS.has(r.id));
+      } else if (state.barFilter === "current") {
+        rows = rows.filter((r) => r.era === "current");
+      }
 
-    const sorted = rows.sort((a, b) => metricFn(a) - metricFn(b));
-    const labels = sorted.map(
-      (r) => `c${r.cycle_id} · ${r.config_label} (${r.weekly_bucket})`
-    );
-    const values = sorted.map(metricFn);
+      rows.sort((a, b) => a.tasks_per_month_primary - b.tasks_per_month_primary);
 
-    let errX;
-    if (state.apiMetric === "usd") {
-      errX = {
-        type: "data",
-        symmetric: false,
-        array: sorted.map((r) =>
-          Math.max(0, r.implied_pool_ci_high - r.implied_pool_usd_per_month)
-        ),
-        arrayminus: sorted.map((r) =>
-          Math.max(0, r.implied_pool_usd_per_month - r.implied_pool_ci_low)
-        ),
-        color: colors.muted,
-        thickness: 1.4,
-      };
-    } else if (state.apiMetric === "mult") {
-      errX = {
-        type: "data",
-        symmetric: false,
-        array: sorted.map(
-          (r) =>
-            Math.max(0, r.implied_pool_ci_high - r.implied_pool_usd_per_month) /
-            CFG.subscriptionPriceUsd
-        ),
-        arrayminus: sorted.map(
-          (r) =>
-            Math.max(0, r.implied_pool_usd_per_month - r.implied_pool_ci_low) /
-            CFG.subscriptionPriceUsd
-        ),
-        color: colors.muted,
-        thickness: 1.4,
-      };
-    }
+      const height = Math.max(380, rows.length * 36 + 90);
+      chartEl.style.minHeight = `${height}px`;
 
-    const trace = {
-      type: "bar",
-      orientation: "h",
-      y: labels,
-      x: values,
-      error_x: errX,
-      marker: {
-        color: sorted.map(famColorFor),
-        opacity: 0.9,
-      },
-      text: sorted.map((r, i) => {
-        const v = values[i];
-        if (state.apiMetric === "usd") return fmtUsd(v, v < 10 ? 2 : 0);
-        if (state.apiMetric === "mult") return `${v.toFixed(1)}×`;
-        return `${v.toFixed(1)} pp/$`;
-      }),
-      textposition: "outside",
-      cliponaxis: false,
-      hovertemplate: sorted.map(
-        (r) =>
-          `<b>${r.aa_name}</b> (Cycle ${r.cycle_id}, ${r.date})<br>` +
-          `Pool: <code>${r.weekly_bucket}</code><br>` +
-          `Implied Pool Value: <b>${fmtUsd(r.implied_pool_usd_per_month, r.implied_pool_usd_per_month < 10 ? 2 : 0)}/mo</b> ` +
-          `(95% CI: ${fmtUsd(r.implied_pool_ci_low, r.implied_pool_ci_low < 10 ? 2 : 0)}–${fmtUsd(r.implied_pool_ci_high, r.implied_pool_ci_high < 10 ? 2 : 0)})<br>` +
-          `Run API Cost: ${fmtUsd(r.api_cost_usd, 3)} · Burn: ${r.weekly_burn_pp.toFixed(2)} pp<br>` +
-          `SWE-bench Resolved: ${r.resolved_valid}/${r.attempted_valid}<extra></extra>`
-      ),
-    };
-
-    const shapes = [];
-    const annotations = [];
-    if (state.apiMetric === "usd" || state.apiMetric === "mult") {
-      const refVal = state.apiMetric === "usd" ? CFG.subscriptionPriceUsd : 1.0;
-      shapes.push({
-        type: "line",
-        x0: refVal,
-        x1: refVal,
-        y0: -0.5,
-        y1: labels.length - 0.5,
-        line: { color: colors.refLine, width: 1.6, dash: "dash" },
+      const labels = rows.map((r) => {
+        const eraTag = r.era === "nov7" ? " (Nov 7)" : "";
+        const planTag = r.weekly_bucket === "codex-30d" ? " · Free" : "";
+        return `${r.family_label} (${friendlyEffort(r.effort)})${eraTag}${planTag}`;
       });
-      annotations.push({
-        x: refVal,
-        y: labels.length - 0.5,
-        text:
-          state.apiMetric === "usd"
-            ? `$${CFG.subscriptionPriceUsd} Pro Price`
-            : "1.0× Break-even",
-        showarrow: false,
-        xanchor: "left",
-        yanchor: "bottom",
-        xshift: 5,
-        font: { size: 11, color: colors.refLine },
+      const values = rows.map((r) => r.tasks_per_month_primary);
+
+      const trace = {
+        type: "bar",
+        orientation: "h",
+        y: labels,
+        x: values,
+        marker: {
+          color: rows.map((r) => r.color),
+          opacity: rows.map((r) => (r.era === "nov7" ? 0.6 : 0.92)),
+        },
+        text: rows.map(
+          (r) => `~${fmtInt(r.tasks_per_month_primary)} tasks  (Intel ${fmtNum(r.aa_intelligence, 1)})`
+        ),
+        textposition: "outside",
+        cliponaxis: false,
+        hovertemplate: rows.map(
+          (r) =>
+            `<b>${r.family_label} (${friendlyEffort(r.effort)})</b><br>` +
+            `${friendlyPool(r.weekly_bucket)}<br>` +
+            `Capacity: <b>~${fmtInt(r.tasks_per_month_primary)} tasks/mo</b>  ·  Intelligence: <b>${fmtNum(r.aa_intelligence, 1)}</b><br>` +
+            `API-equivalent pool: <b>~${fmtUsd(r.implied_pool_usd_per_month, r.implied_pool_usd_per_month < 10 ? 2 : 0)}/mo</b><extra></extra>`
+        ),
+      };
+
+      const maxX = Math.max(...values, 10);
+      const layout = {
+        height,
+        paper_bgcolor: colors.paper,
+        plot_bgcolor: colors.plot,
+        font: { color: colors.text, family: "Inter, sans-serif", size: 12 },
+        margin: { t: 16, r: 165, b: 48, l: 225 },
+        hoverlabel: {
+          bgcolor: colors.surface,
+          bordercolor: colors.grid,
+          font: { color: colors.text, family: "Inter, sans-serif", size: 12.5 },
+        },
+        xaxis: {
+          title: { text: "Estimated Tasks per Month", standoff: 10 },
+          gridcolor: colors.grid,
+          zerolinecolor: colors.grid,
+          tickfont: { color: colors.muted },
+          range: [0, maxX * 1.24],
+        },
+        yaxis: {
+          automargin: true,
+          tickfont: { size: 12, color: colors.text },
+        },
+      };
+
+      Plotly.react("bar-chart", [trace], layout, {
+        responsive: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"],
+      });
+    } else {
+      // Equivalent Monthly API Value ($/mo) across directly measured models
+      titleEl.textContent = "Equivalent Monthly API Value by Model";
+      descEl.textContent =
+        "What the same monthly quota would cost if billed at standard API rates—compared against the $19.99/mo Google AI Pro price.";
+      filterEl.style.display = "none";
+
+      // Deduplicate by keeping latest cycle per model_id (e.g. Cycle 12 Hydrogen over Cycle 5)
+      const latestByModel = new Map();
+      for (const r of state.data.measured_cycles) {
+        const key = `${r.model_id}:${r.effort}:${r.weekly_bucket}`;
+        const prev = latestByModel.get(key);
+        if (!prev || r.cycle_id > prev.cycle_id) latestByModel.set(key, r);
+      }
+      const rows = [...latestByModel.values()].sort(
+        (a, b) => a.implied_pool_usd_per_month - b.implied_pool_usd_per_month
+      );
+
+      const height = Math.max(400, rows.length * 38 + 90);
+      chartEl.style.minHeight = `${height}px`;
+
+      const famColorFor = (r) => {
+        const id = r.model_id || "";
+        if (id.includes("neon")) return "#2563eb";
+        if (id.includes("hydrogen")) return "#0891b2";
+        if (id.includes("argon")) return "#7c3aed";
+        if (id.includes("3.8-flash")) return "#64748b";
+        if (id.includes("opus")) return "#d97706";
+        if (id.includes("sonnet")) return "#ea580c";
+        return "#16a34a";
+      };
+
+      const labels = rows.map(friendlyMeasuredName);
+      const values = rows.map((r) => r.implied_pool_usd_per_month);
+
+      const trace = {
+        type: "bar",
+        orientation: "h",
+        y: labels,
+        x: values,
+        marker: {
+          color: rows.map(famColorFor),
+          opacity: rows.map((r) => (r.era === "nov7" ? 0.6 : 0.92)),
+        },
+        text: rows.map((r) => {
+          const v = r.implied_pool_usd_per_month;
+          const mult = r.api_multiplier ? `  (${r.api_multiplier.toFixed(1)}× Pro)` : "";
+          return `${fmtUsd(v, v < 10 ? 2 : 0)}/mo${mult}`;
+        }),
+        textposition: "outside",
+        cliponaxis: false,
+        hovertemplate: rows.map((r) => {
+          const v = r.implied_pool_usd_per_month;
+          const d = v < 10 ? 2 : 0;
+          return (
+            `<b>${friendlyMeasuredName(r)}</b><br>` +
+            `${friendlyPool(r.weekly_bucket)}<br>` +
+            `Equivalent API Value: <b>${fmtUsd(v, d)}/mo</b><br>` +
+            `Capacity: <b>~${fmtInt(r.tasks_per_month_attempted)} tasks/mo</b>  ·  Intelligence: <b>${fmtNum(r.aa_intelligence, 1)}</b><extra></extra>`
+          );
+        }),
+      };
+
+      const maxX = Math.max(...values, 50);
+      const layout = {
+        height,
+        paper_bgcolor: colors.paper,
+        plot_bgcolor: colors.plot,
+        font: { color: colors.text, family: "Inter, sans-serif", size: 12 },
+        margin: { t: 24, r: 150, b: 48, l: 230 },
+        hoverlabel: {
+          bgcolor: colors.surface,
+          bordercolor: colors.grid,
+          font: { color: colors.text, family: "Inter, sans-serif", size: 12.5 },
+        },
+        xaxis: {
+          title: { text: "Equivalent Monthly API Value (USD / month)", standoff: 10 },
+          gridcolor: colors.grid,
+          zerolinecolor: colors.grid,
+          tickfont: { color: colors.muted },
+          range: [0, maxX * 1.24],
+        },
+        yaxis: {
+          automargin: true,
+          tickfont: { size: 12, color: colors.text },
+        },
+        shapes: [
+          {
+            type: "line",
+            x0: CFG.subscriptionPriceUsd,
+            x1: CFG.subscriptionPriceUsd,
+            y0: -0.5,
+            y1: labels.length - 0.5,
+            line: { color: colors.refLine, width: 1.6, dash: "dash" },
+          },
+        ],
+        annotations: [
+          {
+            x: CFG.subscriptionPriceUsd,
+            y: labels.length - 0.5,
+            text: `$${CFG.subscriptionPriceUsd} Pro Price`,
+            showarrow: false,
+            xanchor: "left",
+            yanchor: "bottom",
+            xshift: 5,
+            font: { size: 11, color: colors.refLine },
+          },
+        ],
+      };
+
+      Plotly.react("bar-chart", [trace], layout, {
+        responsive: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"],
       });
     }
-
-    const xTitles = {
-      usd: "Implied Monthly API Value at 100% Quota Utilization (USD / mo)",
-      mult: `Implied API Value Multiplier vs. $${CFG.subscriptionPriceUsd}/mo Google AI Pro`,
-      burn: "Weekly Quota Burn per $1 of API Spend (pp / $1 — lower is more generous)",
-    };
-
-    const layout = {
-      paper_bgcolor: colors.paper,
-      plot_bgcolor: colors.plot,
-      font: { color: colors.text, family: "Inter, sans-serif", size: 12 },
-      margin: { t: 24, r: 64, b: 50, l: 245 },
-      xaxis: {
-        title: { text: xTitles[state.apiMetric], standoff: 10 },
-        gridcolor: colors.grid,
-        zerolinecolor: colors.grid,
-        tickfont: { color: colors.muted },
-      },
-      yaxis: {
-        automargin: true,
-        tickfont: { size: 11.5, family: "JetBrains Mono, monospace", color: colors.text },
-      },
-      shapes,
-      annotations,
-    };
-
-    Plotly.react("api-value-chart", [trace], layout, {
-      responsive: true,
-      displaylogo: false,
-      modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"],
-    });
   }
 
   // Interactive Monthly Quota Planner
@@ -572,8 +654,8 @@
           weightedIntelSum += tasks * s.proj.aa_intelligence;
           totalApiUsd += apiUsd;
           lines.push(
-            `<li><strong>${s.proj.family_label} (${s.proj.effort})</strong>: ` +
-              `<span class="tabular">${fmtNum(tasks, 1)} tasks</span> · ` +
+            `<li><strong>${s.proj.family_label} (${friendlyEffort(s.proj.effort)})</strong>: ` +
+              `<span class="tabular">~${fmtInt(tasks)} tasks</span> · ` +
               `<span class="tabular">${fmtUsd(apiUsd, 0)} API eq.</span></li>`
           );
         }
@@ -586,8 +668,8 @@
         weightedIntelSum += tasks3p * opusMed.aa_intelligence;
         totalApiUsd += api3p;
         lines.push(
-          `<li><strong>Claude Opus 5.5 (medium, 3p-weekly)</strong>: ` +
-            `<span class="tabular">${fmtNum(tasks3p, 1)} tasks</span> · ` +
+          `<li><strong>Claude Opus 5.5 (Bonus Quota)</strong>: ` +
+            `<span class="tabular">~${fmtNum(tasks3p, 1)} tasks</span> · ` +
             `<span class="tabular">${fmtUsd(api3p, 0)} API eq.</span></li>`
         );
       }
@@ -596,13 +678,13 @@
       const mult = totalApiUsd / CFG.subscriptionPriceUsd;
       const netSavings = Math.max(0, totalApiUsd - CFG.subscriptionPriceUsd);
 
-      document.getElementById("res-tasks").textContent = fmtInt(totalTasks);
+      document.getElementById("res-tasks").textContent = `~${fmtInt(totalTasks)}`;
       document.getElementById("res-intel").textContent = fmtNum(avgIntel, 1);
       document.getElementById("res-api-usd").textContent = fmtUsd(totalApiUsd, 0);
       document.getElementById("res-mult").textContent = `${mult.toFixed(1)}×`;
 
       document.getElementById("res-breakdown").innerHTML =
-        `<div>At <strong>${utilSlider.value}%</strong> weekly utilization, this mix saves roughly <strong>${fmtUsd(netSavings, 0)}/mo</strong> vs. direct API billing (after $${CFG.subscriptionPriceUsd}/mo Pro).</div>` +
+        `<div>At <strong>${utilSlider.value}%</strong> weekly usage, this mix saves roughly <strong>${fmtUsd(netSavings, 0)}/mo</strong> compared to direct API pricing.</div>` +
         `<ul>${lines.join("")}</ul>`;
     }
 
@@ -632,7 +714,7 @@
     updatePlanner();
   }
 
-  // Sortable Data Table
+  // Sortable Data Table (inside collapsed deep-dive drawer)
   function renderTable() {
     const thead = document.querySelector("#benchmark-table thead");
     const tbody = document.querySelector("#benchmark-table tbody");
@@ -650,25 +732,22 @@
         ? [
             { key: "family_label", label: "Model", align: "left" },
             { key: "effort", label: "Effort", align: "left" },
-            { key: "weekly_bucket", label: "Pool", align: "left" },
+            { key: "weekly_bucket", label: "Subscription Pool", align: "left" },
             { key: "measured", label: "Source", align: "left" },
-            { key: "aa_intelligence", label: "AA Intel", align: "right" },
-            { key: "tasks_per_month_primary", label: "Tasks/mo (Real)", align: "right" },
-            { key: "token_weighted_tasks_per_month", label: "Tasks/mo (Token)", align: "right" },
-            { key: "aa_ii_cost_per_task", label: "AA $/Task", align: "right" },
-            { key: "implied_pool_usd_per_month", label: "Implied API $/mo", align: "right" },
+            { key: "aa_intelligence", label: "Intelligence", align: "right" },
+            { key: "tasks_per_month_primary", label: "Tasks/mo", align: "right" },
+            { key: "token_weighted_tasks_per_month", label: "Token-Only/mo", align: "right" },
+            { key: "implied_pool_usd_per_month", label: "API Value/mo", align: "right" },
             { key: "api_multiplier", label: "× Pro", align: "right" },
           ]
         : [
-            { key: "cycle_id", label: "Cycle", align: "right" },
             { key: "date", label: "Date", align: "left" },
-            { key: "config_label", label: "Config", align: "left" },
-            { key: "weekly_bucket", label: "Pool", align: "left" },
-            { key: "aa_intelligence", label: "AA Intel", align: "right" },
-            { key: "resolved_valid", label: "SWE Resolved", align: "right" },
+            { key: "aa_name", label: "Model Tested", align: "left" },
+            { key: "weekly_bucket", label: "Subscription Pool", align: "left" },
+            { key: "aa_intelligence", label: "Intelligence", align: "right" },
+            { key: "resolved_valid", label: "Tasks Solved", align: "right" },
             { key: "api_cost_usd", label: "Run API $", align: "right" },
-            { key: "weekly_burn_pp", label: "Burn (pp)", align: "right" },
-            { key: "implied_pool_usd_per_month", label: "Implied $/mo (95% CI)", align: "right" },
+            { key: "implied_pool_usd_per_month", label: "API Value/mo (95% CI)", align: "right" },
             { key: "tasks_per_month_attempted", label: "Tasks/mo (95% CI)", align: "right" },
           ];
 
@@ -679,7 +758,7 @@
 
     if (q) {
       rows = rows.filter((r) =>
-        JSON.stringify(r).toLowerCase().includes(q)
+        `${JSON.stringify(r)} ${friendlyPool(r.weekly_bucket)}`.toLowerCase().includes(q)
       );
     }
 
@@ -731,18 +810,17 @@
           const isPareto = currentParetoIds.has(r.id);
           return (
             `<tr>` +
-            `<td><span class="model-dot" style="background:${r.color}"></span><strong>${r.family_label}</strong>${isPareto ? '<span class="badge badge-pareto">Pareto</span>' : ""}</td>` +
-            `<td class="mono">${r.effort}</td>` +
-            `<td class="mono">${r.weekly_bucket}</td>` +
+            `<td><span class="model-dot" style="background:${r.color}"></span><strong>${r.family_label}</strong>${isPareto ? '<span class="badge badge-pareto">Frontier</span>' : ""}</td>` +
+            `<td>${friendlyEffort(r.effort)}</td>` +
+            `<td>${friendlyPool(r.weekly_bucket)}</td>` +
             `<td>${
               r.measured
-                ? `<span class="badge badge-measured">Measured c${r.source_cycle_id}</span>`
-                : `<span class="badge badge-scaled">Scaled c${r.source_cycle_id}</span>`
+                ? `<span class="badge badge-measured">Measured</span>`
+                : `<span class="badge badge-scaled">Effort-scaled</span>`
             }</td>` +
             `<td class="num-col"><strong>${fmtNum(r.aa_intelligence, 1)}</strong></td>` +
             `<td class="num-col"><strong>${fmtInt(r.tasks_per_month_primary)}</strong></td>` +
             `<td class="num-col">${fmtInt(r.token_weighted_tasks_per_month)}</td>` +
-            `<td class="num-col">${fmtUsd(r.aa_ii_cost_per_task, 4)}</td>` +
             `<td class="num-col">${fmtUsd(r.implied_pool_usd_per_month, r.implied_pool_usd_per_month < 10 ? 2 : 0)}</td>` +
             `<td class="num-col">${r.api_multiplier != null ? `${r.api_multiplier.toFixed(1)}×` : "—"}</td>` +
             `</tr>`
@@ -754,14 +832,12 @@
         .map(
           (r) =>
             `<tr>` +
-            `<td class="num-col mono">${r.cycle_id}</td>` +
             `<td class="mono">${r.date}</td>` +
-            `<td class="mono"><strong>${r.config_label}</strong></td>` +
-            `<td class="mono">${r.weekly_bucket}</td>` +
+            `<td><strong>${friendlyMeasuredName(r)}</strong></td>` +
+            `<td>${friendlyPool(r.weekly_bucket)}</td>` +
             `<td class="num-col"><strong>${fmtNum(r.aa_intelligence, 1)}</strong></td>` +
             `<td class="num-col">${r.resolved_valid}/${r.attempted_valid}</td>` +
             `<td class="num-col">${fmtUsd(r.api_cost_usd, 3)}</td>` +
-            `<td class="num-col">${fmtNum(r.weekly_burn_pp, 2)}</td>` +
             `<td class="num-col"><strong>${fmtUsd(r.implied_pool_usd_per_month, r.implied_pool_usd_per_month < 10 ? 2 : 0)}</strong> <span style="opacity:0.7">(${fmtUsd(r.implied_pool_ci_low, r.implied_pool_ci_low < 10 ? 2 : 0)}–${fmtUsd(r.implied_pool_ci_high, r.implied_pool_ci_high < 10 ? 2 : 0)})</span></td>` +
             `<td class="num-col"><strong>${fmtInt(r.tasks_per_month_attempted)}</strong> <span style="opacity:0.7">(${fmtInt(r.tasks_mo_ci_low)}–${fmtInt(r.tasks_mo_ci_high)})</span></td>` +
             `</tr>`
@@ -811,49 +887,39 @@
       });
     };
 
-    wireSegmented("metric-toggle", (v) => {
-      state.metric = v;
-      renderParetoChart();
-    });
     wireSegmented("era-toggle", (v) => {
       state.era = v;
+      renderParetoChart();
+    });
+    wireSegmented("scope-toggle", (v) => {
+      state.scope = v;
+      renderParetoChart();
+    });
+    wireSegmented("metric-toggle", (v) => {
+      state.metric = v;
       renderParetoChart();
     });
     wireSegmented("scale-toggle", (v) => {
       state.xScale = v;
       renderParetoChart();
     });
-    wireSegmented("api-metric-toggle", (v) => {
-      state.apiMetric = v;
-      renderApiChart();
+    wireSegmented("bar-metric-toggle", (v) => {
+      state.barMetric = v;
+      renderBarChart();
+    });
+    wireSegmented("bar-filter-toggle", (v) => {
+      state.barFilter = v;
+      renderBarChart();
     });
     wireSegmented("table-view-toggle", (v) => {
       state.tableView = v;
       state.tableSort =
         v === "projections"
           ? { key: "aa_intelligence", dir: "desc" }
-          : { key: "cycle_id", dir: "asc" };
+          : { key: "date", dir: "desc" };
       renderTable();
     });
 
-    document.querySelectorAll("#pool-filters .pool-pill").forEach((pill) => {
-      const input = pill.querySelector("input");
-      input.addEventListener("change", () => {
-        if (input.checked) {
-          state.pools.add(input.value);
-          pill.classList.add("active");
-        } else {
-          state.pools.delete(input.value);
-          pill.classList.remove("active");
-        }
-        renderParetoChart();
-      });
-    });
-
-    document.getElementById("toggle-pareto").addEventListener("change", (e) => {
-      state.showPareto = e.target.checked;
-      renderParetoChart();
-    });
     document.getElementById("toggle-curves").addEventListener("change", (e) => {
       state.showCurves = e.target.checked;
       renderParetoChart();
@@ -886,12 +952,10 @@
     state.data = await resp.json();
 
     const snapDate = state.data.meta.aa_snapshot.slice(0, 10);
-    document.getElementById("meta-snapshot").textContent =
-      `${state.data.meta.aa_index_version} · Snapshot ${snapDate} · ${state.data.meta.measured_cycle_count} empirical cycles`;
     document.getElementById("footer-date").textContent = snapDate;
 
     renderParetoChart();
-    renderApiChart();
+    renderBarChart();
     initPlanner();
     renderTable();
   }
@@ -901,7 +965,7 @@
       console.error(err);
       const el = document.getElementById("pareto-chart");
       if (el) {
-        el.innerHTML = `<p style="padding:20px;color:#dc2626">Failed to load benchmark data: ${err.message}. Serve <code>site/</code> via a local HTTP server (e.g. <code>python3 -m http.server -d site 8000</code>).</p>`;
+        el.innerHTML = `<p style="padding:20px;color:#dc2626">Failed to load benchmark data: ${err.message}.</p>`;
       }
     });
   });
