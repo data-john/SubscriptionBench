@@ -281,13 +281,15 @@ def test_compute_aa_projections_and_cli(tmp_path: Path) -> None:
     # Codex uncached = 1.5M - 1.0M = 0.5M ($0.05) + 1.0M*0.01 ($0.01) + 0.02M*0.50 ($0.01) = $0.07
     assert abs((s.api_cost_usd or 0) - 0.07) < 1e-6
     assert abs((s.implied_pool_usd_per_month or 0) - 7.0) < 1e-4
-    assert abs((s.tasks_per_month_resolved or 0) - 100.0) < 1e-4
+    # 7.0 / 0.08 (AA cost_per_task) = 87.5
+    assert abs((s.tasks_per_month_resolved or 0) - 87.5) < 1e-4
 
     effort_pts = project_effort_variants(summaries, models)
     assert len(effort_pts) == 2
     med_pt = next(p for p in effort_pts if p.effort == "medium")
     assert not med_pt.measured
-    assert abs(med_pt.tasks_per_month_attempted - 200.0) < 1e-4
+    # 7.0 / 0.04 (AA cost_per_task) = 175.0
+    assert abs(med_pt.tasks_per_month_attempted - 175.0) < 1e-4
 
     reports = write_aa_projection_reports(
         summaries, effort_points=effort_pts, out_dir=tmp_path / "rep"

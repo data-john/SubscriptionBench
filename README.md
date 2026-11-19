@@ -128,22 +128,22 @@ Each benchmark run produces a reproducible dataset and a concise summary report 
 ## Development
 
 * Plan: [`docs/implementation_plan.md`](docs/implementation_plan.md). Phase 0/3 results: [`docs/phase0_findings.md`](docs/phase0_findings.md). Next-batch handover (Phases 3–6 fixes + Phases 7–8): [`docs/handover_phases7_8.md`](docs/handover_phases7_8.md).
-* Requires [`uv`](https://docs.astral.sh/uv/), Python 3.12, and Docker (task containers, suite validation, and grading).
+* Requires Python 3.12 (`.venv/`) and Docker (task containers, suite validation, and grading).
 
 ```bash
-uv sync --group suite                     # runtime + dev + swebench/pyarrow tools
-uv run pytest                             # offline unit tests (0% quota burn)
-uv run ruff check . && uv run ruff format --check .
-uv run subbench init-db                   # create/migrate data/subbench.sqlite
-uv run subbench validate experiments/baseline.yaml
+.venv/bin/pytest                             # offline unit tests (0% quota burn)
+.venv/bin/ruff check . && .venv/bin/ruff format --check .
+.venv/bin/subbench init-db                   # create/migrate data/subbench.sqlite
+.venv/bin/subbench validate experiments/baseline.yaml
 
 # Quota snapshot (zero quota cost) & dry-run schedule check
-uv run subbench quota snapshot
-uv run subbench run experiments/pilot-flash.yaml --dry-run
+.venv/bin/subbench quota snapshot
+.venv/bin/subbench run experiments/pilot-flash.yaml --dry-run
 
 # End-to-end cycle pipeline (run from a plain host terminal with no concurrent sessions)
-uv run subbench run experiments/pilot-flash.yaml
-uv run subbench grade --cycle-id <id>
-uv run subbench audit --cycle-id <id>
-uv run subbench report --cycle-id <id>    # Phase 7: Markdown, CSV/Parquet, SVG charts
+.venv/bin/subbench run experiments/pilot-flash.yaml
+.venv/bin/subbench grade --cycle-id <id>
+.venv/bin/subbench audit --cycle-id <id>
+.venv/bin/subbench report --cycle-id <id>    # Phase 7: Markdown, CSV/Parquet, SVG charts
+.venv/bin/subbench aa project             # AA throughput projections: Implied Pool $/mo / AA Cost/Task
 ```

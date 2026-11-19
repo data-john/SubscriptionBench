@@ -1,0 +1,20 @@
+# Gemini 4 Neon (Low) on the curated 6-task core suite.
+name: neon-low
+description: Gemini 4 Neon (Low) on the 6-task core suite.
+suite: suites/verified-core-6.json
+agy_path: /home/john/.local/bin/agy
+passes: 1
+timeout_minutes: 60
+prompt_template: minimal-v1
+configs:
+  - label: neon-low
+    role: default
+    model_id: gemini-4-neon-low
+    buckets: [gemini-5h, gemini-weekly]
+quota:
+  max_weekly_fraction_per_config_cycle: 0.85  # Protect the final 15% reserve while guaranteeing full completion
+  external_use_threshold: 0.0005  # 0.05 pp tolerance for backend quota settling jitter
+  weekly_bucket_by_config:
+    neon-low: gemini-weekly
+  primary_bucket_by_config:
+    neon-low: gemini-5h

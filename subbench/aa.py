@@ -593,12 +593,19 @@ def compute_aa_projections(
             implied_wk_usd = api_cost_usd / total_burn_frac
             implied_mo_usd = implied_wk_usd * weeks_per_month
 
-        tasks_mo_att = (
-            (attempted_valid / total_burn_frac) * weeks_per_month if total_burn_frac > 0 else None
-        )
-        tasks_mo_res = (
-            (resolved_valid / total_burn_frac) * weeks_per_month if total_burn_frac > 0 else None
-        )
+        aa_cpt = aa_match.ii_cost_per_task if aa_match else None
+        if implied_mo_usd is not None and aa_cpt is not None and aa_cpt > 0:
+            # Convert Subbench-calibrated monthly pool $ into AA full-suite tasks/month
+            tasks_mo_att = implied_mo_usd / aa_cpt
+            tasks_mo_res = (
+                tasks_mo_att * (resolved_valid / attempted_valid) if attempted_valid > 0 else 0.0
+            )
+        elif total_burn_frac > 0:
+            tasks_mo_att = (attempted_valid / total_burn_frac) * weeks_per_month
+            tasks_mo_res = (resolved_valid / total_burn_frac) * weeks_per_month
+        else:
+            tasks_mo_att = None
+            tasks_mo_res = None
 
         summaries.append(
             SubbenchConfigCostSummary(
@@ -727,7 +734,8 @@ def project_effort_variants(
         ):
             continue
 
-        base_tokens = set(_norm_tokens(fam))
+        base_tokens_seq = tuple(_norm_tokens(fam))
+        base_tokens = set(base_tokens_seq)
         for m in aa_models:
             if not m.slug or m.slug.lower() in measured_slugs:
                 continue
@@ -742,7 +750,7 @@ def project_effort_variants(
                 continue
             eff = _extract_effort_from_aa(m)
             slug_base = _base_family_id(m.slug, eff)
-            if set(_norm_tokens(slug_base)) != base_tokens:
+            if tuple(_norm_tokens(slug_base)) != base_tokens_seq:
                 continue
 
             # Pick the measured anchor closest in AA cost_per_task to target
@@ -916,11 +924,11 @@ def render_aa_intelligence_vs_tasks_svg(
         f'  <text x="{pad_left}" y="32" font-size="19" font-weight="700" fill="#0f172a">'
         "AA Intelligence Index vs. Subscription Throughput (Tasks / Month)</text>",
         f'  <text x="{pad_left}" y="52" font-size="12" fill="#475569">'
-        "Filled = measured in Subbench (verified-core-6)  |  "
-        f"Hollow = projected via AA cost-per-task ratio{date_note}</text>",
+        "Projected Monthly Tasks = Implied Pool $/mo ÷ AA Cost/Task  |  "
+        f"Filled = quota-calibrated in Subbench, Hollow = sibling pool{date_note}</text>",
     ]
 
-    cand_ticks = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+    cand_ticks = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
     p_bot = pad_top + plot_h
     for tx in cand_ticks:
         lx = math.log10(tx)
@@ -1170,12 +1178,13 @@ def write_aa_projection_reports(
         "# Artificial Analysis × SubscriptionBench Monthly Projections",
         "",
         f"**AA Snapshot:** `{aa_fetched_at or 'unknown'}`  ",
-        "**Methodology:** `api_cost_usd` prices Subbench `uncached_input`, `cache_read`, and "
-        "`output` tokens using AA list rates (with `0.10×` cache-read fallback if AA omits "
-        "explicit cache pricing). When a `5h` bucket is present, weekly burn is calibrated "
-        "from `5h / ratio` (`3.50` for `gemini-5h`, `2.00` for `3p-5h`) to eliminate weekly "
-        "backend settling jitter. `Implied Pool $/mo` divides `api_cost_usd` by the weekly "
-        "pool fraction burned (`× 4.33` for weekly pools, `× 1.0` for `codex-30d`).",
+        "**Methodology:** Subbench is used to calibrate the token-to-quota conversion rate "
+        "(`Implied Pool $/mo` = `api_cost_usd / total_burn_frac × weeks_per_month`, where "
+        "`api_cost_usd` prices Subbench `uncached_input`, `cache_read`, and `output` tokens "
+        "using AA list rates with `0.10×` cache-read fallback). When a `5h` bucket is present, "
+        "weekly burn is calibrated from `5h / ratio` (`3.50` for `gemini-5h`, `2.00` for "
+        "`3p-5h`) to eliminate weekly backend settling jitter. `Tasks/mo` divides "
+        "`Implied Pool $/mo` by AA's full-suite `cost_per_task` (`aa_ii_cost_per_task`).",
         "",
         "## 1. Empirically Measured Subbench Configs",
         "",

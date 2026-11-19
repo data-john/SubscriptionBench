@@ -1,0 +1,20 @@
+# Claude Opus 5.5 (Medium) in Antigravity on the curated 6-task core suite.
+name: opus-5-5-medium
+description: Claude Opus 5.5 (Medium) on the 6-task core suite.
+suite: suites/verified-core-6.json
+agy_path: /home/john/.local/bin/agy
+passes: 1
+timeout_minutes: 60
+prompt_template: minimal-v1
+configs:
+  - label: opus-5-5-medium
+    role: default
+    model_id: claude-opus-5-5-medium
+    buckets: [3p-5h, 3p-weekly]
+quota:
+  max_weekly_fraction_per_config_cycle: 0.85  # Protect the final 15% reserve while guaranteeing full completion
+  external_use_threshold: 0.0005  # 0.05 pp tolerance for backend quota settling jitter
+  weekly_bucket_by_config:
+    opus-5-5-medium: 3p-weekly
+  primary_bucket_by_config:
+    opus-5-5-medium: 3p-5h
