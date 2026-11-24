@@ -6,11 +6,16 @@
 - Blog: https://data-john.github.io/SubscriptionBench/blog/
 - Source Code & Raw Data: https://github.com/data-john/SubscriptionBench
 - Support Future Benchmarks (Ko-fi): https://ko-fi.com/datajohn
-- Data Snapshot: 2026-11-19 (Artificial Analysis Intelligence Index v5)
+- Data Snapshot: 2026-11-24 (Artificial Analysis Intelligence Index v5)
 
 ## Key Findings (Google AI Pro — $19.99/mo on Antigravity)
 
-1. **Gemini 4 Neon beats Gemini 4 Hydrogen across almost every reasoning level:**
+1. **Gemini 4 Carbon finally arrived on Google AI Pro, but Gemini 4 Neon already beats it everywhere:**
+   - Gemini 4 Carbon (Medium, Cycle 14): 58.3 AA Intelligence, ~37 tasks/month ($242/mo implied API value) — beaten by Gemini 4 Neon High (59.6 AA, ~71 tasks/month, 1.9x more tasks).
+   - Gemini 4 Carbon (High, scaled): 60.0 AA Intelligence, ~31 tasks/month — beaten by Gemini 4 Neon xHigh (61.4 AA, ~41 tasks/month, 1.3x more tasks).
+   - Gemini 4 Carbon (Low, scaled): 54.2 AA Intelligence, ~34 tasks/month — beaten by Gemini 4 Neon Medium (54.9 AA, ~139 tasks/month, 4.1x more tasks).
+
+2. **Gemini 4 Neon beats Gemini 4 Hydrogen across almost every reasoning level:**
    - Gemini 4 Neon (xHigh): 61.4 AA Intelligence, ~45 tasks/month (Pareto frontier)
    - Gemini 4 Neon (High): 59.6 AA Intelligence, ~78 tasks/month (Pareto frontier)
    - Gemini 4 Neon (Medium): 54.9 AA Intelligence, ~154 tasks/month (Pareto frontier; beats Hydrogen xHigh 53.9 @ 66/mo by 2.3x)
@@ -27,6 +32,7 @@
 
 ## Blog Posts
 
+- [Carbon Finally Makes It to Google AI Pro, but It's Already Out of Date — Use Neon](https://data-john.github.io/SubscriptionBench/blog/carbon-antigravity-use-neon.html): Empirical Cycle 14 & 15 comparison showing why Gemini 4 Neon Pareto-dominates Gemini 4 Carbon at every reasoning level on Google AI Pro.
 - [Gemini 4 Neon vs. Hydrogen in Antigravity: Why Neon First Wins on Quota & Intelligence](https://data-john.github.io/SubscriptionBench/blog/neon-vs-hydrogen-antigravity.html): Empirical comparison of Neon vs Hydrogen weekly quota usage and Pareto strategy for Antigravity users.
 
 ## Structured Data

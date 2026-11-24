@@ -28,7 +28,7 @@ POOL_META = {
         "subscription": "Google AI Pro ($19.99/mo)",
         "subscription_price_usd": 19.99,
         "provider": "Google Antigravity",
-        "description": "Shared weekly quota pool for Gemini 4 Neon, Gemini 4 Hydrogen, and legacy Gemini 3.8 Flash.",
+        "description": "Shared weekly quota pool for Gemini 4 Neon, Gemini 4 Carbon, Gemini 4 Hydrogen, and legacy Gemini 3.8 Flash.",
     },
     "gemini-argon-wtu-weekly": {
         "label": "Gemini Argon Weekly (Legacy)",
@@ -58,6 +58,7 @@ POOL_META = {
 
 FAMILY_COLORS = {
     "gemini-4-neon@gemini-weekly": "#2563eb",
+    "gemini-4-carbon@gemini-weekly": "#e11d48",
     "gemini-4-hydrogen@gemini-weekly": "#0891b2",
     "gemini-4-argon@gemini-argon-wtu-weekly": "#7c3aed",
     "gemini-3.8-flash@gemini-weekly": "#64748b",
